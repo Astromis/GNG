@@ -225,7 +225,8 @@ class GNG():
     """Growing Neural Gas multidimensional implementation"""
 
     def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=25,
-                 lambda_=100, alpha=0.5, d=0.0005, max_nodes=100):
+                 lambda_=100, alpha=0.5, d=0.0005, max_nodes=100,
+                 output_images_dir='images'):
         """."""
         self.graph = nx.Graph()
         self.data = data
@@ -255,6 +256,16 @@ class GNG():
         self.count += 1
         self.graph.add_node(self.count, pos=node2, error=0)
         self.graph.add_edge(self.count - 1, self.count, age=0)
+        
+        self._output_images_dir = output_images_dir
+
+        if os.path.isdir(output_images_dir):
+            shutil.rmtree('{}'.format(output_images_dir))
+
+        os.makedirs(output_images_dir)
+
+        print("Ouput images will be saved in: {0}".format(output_images_dir))
+        self._fignum = 0
 
     def number_of_clusters(self):
         return nx.number_connected_components(self.graph)
@@ -358,7 +369,7 @@ class GNG():
 
         return av_dist
 
-    def save_img(self, fignum, output_images_dir='images'):
+    def save_img(self, fignum):
         """."""
 
         #fig = pl.figure(fignum)
@@ -371,19 +382,14 @@ class GNG():
         draw_graph3d(self.graph, fignum, clear=False, node_color=(1, 0, 0))
         #nx.draw(self.graph, position, node_color='r', node_size=100, with_labels=False, edge_color='b', width=1.5, dim=3)
         #pl.title('Growing Neural Gas')
-        mlab.savefig("{0}/{1}.png".format(output_images_dir, str(fignum)))
+        mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
 
-    def train(self, max_iterations=10000, output_images_dir='images'):
+    def train(self, max_iterations=10000):
         """."""
 
-        if os.path.isdir(output_images_dir):
-            shutil.rmtree('{}'.format(output_images_dir))
+        fignum = self._fignum
 
-        os.makedirs(output_images_dir)
-
-        print("Ouput images will be saved in: {0}".format(output_images_dir))
-        fignum = 0
-        self.save_img(fignum, output_images_dir)
+        self.save_img(fignum)
 
         for i in xrange(1, max_iterations):
             print("Iterating..{0:d}/{1}".format(i, max_iterations))
@@ -435,7 +441,7 @@ class GNG():
                     self.graph.add_node(newnode, error=error_max_node)
 
                     fignum += 1
-                    self.save_img(fignum, output_images_dir)
+                    self.save_img(fignum)
 
                 # step 9: Decrease all error variables
                 errorvectors = nx.get_node_attributes(self.graph, 'error')
@@ -467,6 +473,7 @@ def convert_images_to_gif(output_images_dir, output_gif):
 def main():
     """."""
 
+    output_images_dir = 'images'
     read_ids_data('NSL_KDD/Small Training Set.csv')
     #read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     #read_ids_data('NSL_KDD/20 Percent Training Set.csv', is_normal=False)
@@ -481,9 +488,8 @@ def main():
 
     data = np.array(data, dtype='float32')
 
-    grng = GNG(data, surface_graph=G)
+    grng = GNG(data, surface_graph=G, output_images_dir=output_images_dir)
 
-    output_images_dir = 'images'
     output_gif = 'output.gif'
     if grng is not None:
         grng.train(max_iterations=500)

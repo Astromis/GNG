@@ -7,6 +7,7 @@ from mayavi import mlab
 import imageio
 from collections import OrderedDict
 from scipy.spatial.distance import euclidean
+from sklearn import preprocessing
 import csv
 import numpy as np
 import networkx as nx
@@ -109,8 +110,8 @@ def create_data_graph(dots):
 
 
 def draw_graph3d(graph, fignum, clear=True, size=(1024, 768), graph_colormap='viridis', bgcolor = (1, 1, 1),
-                 node_color=(0.3, 0.65, 0.3), node_size=0.3,
-                 edge_color=(0.3, 0.3, 0.9), edge_size=0.05,
+                 node_color=(0.3, 0.65, 0.3), node_size=0.07,
+                 edge_color=(0.3, 0.3, 0.9), edge_size=0.02,
                  text_size=0.008, text_color=(0, 0, 0)):
 
     # https://stackoverflow.com/questions/17751552/drawing-multiplex-graphs-with-networkx
@@ -119,8 +120,8 @@ def draw_graph3d(graph, fignum, clear=True, size=(1024, 768), graph_colormap='vi
     graph_pos = nx.get_node_attributes(graph, 'pos')
     
     # numpy array of x, y, z positions in sorted node order
-    xyz = shrink_to_3d(np.array([graph_pos[v] for v in sorted(gr)]))
-    
+    xyz = preprocessing.scale(shrink_to_3d(preprocessing.normalize(np.array([graph_pos[v] for v in sorted(gr)]), copy=False)), copy=False, with_mean=False)
+
     # scalar colors
     scalars = np.array([n for n in gr.nodes()])
     
@@ -133,19 +134,17 @@ def draw_graph3d(graph, fignum, clear=True, size=(1024, 768), graph_colormap='vi
     if clear:
         mlab.clf()
 
-    #----------------------------------------------------------------------------
     # the x,y, and z co-ordinates are here
     # manipulate them to obtain the desired projection perspective 
 
     pts = mlab.points3d(xyz[:,0], xyz[:,1], xyz[:,2],
-                        # scalars,
+                        #scalars,
                         scale_factor=node_size,
                         scale_mode='none',
                         color=node_color,
                         colormap=graph_colormap,
                         resolution=20,
                         transparent=False)
-    #----------------------------------------------------------------------------
     """
     for i, (x, y, z) in enumerate(xyz):
         label = mlab.text(x, y, str(i), z=z,
@@ -297,6 +296,7 @@ class GNG():
 
     def get_new_position(self, winnerpos, nodepos):
         """."""
+
         move_delta = tuple(self.eps_b * (i - j) for i, j in zip(nodepos, winnerpos))
         newpos = tuple(i + j for i, j in zip(move_delta, winnerpos))
 
@@ -304,6 +304,7 @@ class GNG():
 
     def get_new_position_neighbors(self, neighborpos, nodepos):
         """."""
+
         movement = tuple(self.eps_n * (i - j) for i, j in zip(nodepos, neighborpos))
         newpos = tuple(i + j for i, j in zip(neighborpos, movement))
 
@@ -311,6 +312,7 @@ class GNG():
 
     def update_winner(self, curnode):
         """."""
+
         # find nearest unit and second nearest unit
         winner1, winner2 = self.determine_2closest_vertices(curnode)
         winnernode = winner1[0]
@@ -372,16 +374,10 @@ class GNG():
     def save_img(self, fignum):
         """."""
 
-        #fig = pl.figure(fignum)
-        #ax = fig.add_subplot(111, projection='3d')
         if self._surface_graph is not None:
-            #nx.draw(self._surface_graph, self._surface_pos, node_color='#ffffff', with_labels=False, node_size=100, alpha=0.5, width=1.5)
             draw_graph3d(self._surface_graph, fignum)
          
-        #position = nx.get_node_attributes(self.graph, 'pos')
         draw_graph3d(self.graph, fignum, clear=False, node_color=(1, 0, 0))
-        #nx.draw(self.graph, position, node_color='r', node_size=100, with_labels=False, edge_color='b', width=1.5, dim=3)
-        #pl.title('Growing Neural Gas')
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
 
     def train(self, max_iterations=10000):
@@ -474,13 +470,14 @@ def main():
     """."""
 
     output_images_dir = 'images'
-    read_ids_data('NSL_KDD/Small Training Set.csv')
+    #read_ids_data('NSL_KDD/Small Training Set.csv')
     #read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     #read_ids_data('NSL_KDD/20 Percent Training Set.csv', is_normal=False)
     #read_ids_data('NSL_KDD/KDDTrain+.txt')
 
     #G, pos = create_test_data_graph(read_test_file())
     G, pos = create_data_graph(read_ids_data('NSL_KDD/Small Training Set.csv'))
+    #G, pos = create_data_graph(read_ids_data('NSL_KDD/20 Percent Training Set.csv'))
 
     data = []
     for key, value in iteritems(pos):
@@ -492,7 +489,7 @@ def main():
 
     output_gif = 'output.gif'
     if grng is not None:
-        grng.train(max_iterations=500)
+        grng.train(max_iterations=5000)
         print('Clusters count: {}'.format(grng.number_of_clusters()))
         convert_images_to_gif(output_images_dir, output_gif)
 

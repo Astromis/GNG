@@ -2,62 +2,188 @@
 # -*- coding: utf-8 -*-
 """Initialize module utils."""
 
-
+from math import sqrt
+from mayavi import mlab
+import imageio
+from collections import OrderedDict
+from scipy.spatial.distance import euclidean
+import csv
 import numpy as np
 import networkx as nx
-import imageio
-from matplotlib import pylab as pl
 import re
 import os
+import shutil
 import glob
 from past.builtins import xrange
 from future.utils import iteritems
 
-pos = None
-G = None
+
+def shrink_to_3d(data):
+    result = []
+    
+    for i in data:
+        depth = len(i)
+        if depth <=3:
+            result.append(i)
+        else:
+            sm = np.sum(i)
+            sm = depth - sm
+            if sm == 0:
+                sm = 1
+
+            i0 = i[0]
+            i1 = i[1]
+            i2 = i[2]
+            result.append([i0 * depth / sm, i1 * depth / sm, i2 * depth / sm])
+            
+    return np.array(result)
 
 
-def readFile():
+def read_test_file():
     """Read the file and return the indices as list of lists."""
-    filename = 's.txt'
+    filename = 'test_data.txt'
     with open(filename) as file:
         array2d = [[int(digit) for digit in line.split()] for line in file]
+
     return array2d
 
 
-def read_file_draw_graph():
+def create_test_data_graph(array2d):
     """Create the graph and returns the networkx version of it 'G'."""
-    global pos
-    global G
-    array2d = readFile()
 
-    ROW, COLUMN = len(array2d), len(array2d[0])
+    pos = None
+
+    row, column = len(array2d), len(array2d[0])
     count = 0
 
     G = nx.Graph()
 
-    for j in xrange(COLUMN):
-        for i in xrange(ROW):
-            if array2d[ROW - 1 - i][j] == 0:
-                G.add_node(count, pos=(j, i))
+    for j in xrange(column):
+        for i in xrange(row):
+            if array2d[row - 1 - i][j] == 0:
+                G.add_node(count, pos=(j, i, np.random.randint(-1, 1)))
                 count += 1
 
     pos = nx.get_node_attributes(G, 'pos')
 
+    """
     for index in pos.keys():
         for index2 in pos.keys():
             if pos[index][0] == pos[index2][0] and pos[index][1] == pos[index2][1] - 1:
                 G.add_edge(index, index2, weight=1)
             if pos[index][1] == pos[index2][1] and pos[index][0] == pos[index2][0] - 1:
                 G.add_edge(index, index2, weight=1)
+    """
+    return G, pos
 
-    return G
+
+def create_data_graph(dots):
+    """Create the graph and returns the networkx version of it 'G'."""
+
+    pos = None
+    count = 0
+
+    G = nx.Graph()
+
+    for i in dots:
+        G.add_node(count, pos=(i))
+        count += 1
+
+    pos = nx.get_node_attributes(G, 'pos')
+
+    """
+    for index in pos.keys():
+        for index2 in pos.keys():
+            if pos[index][0] == pos[index2][0] and pos[index][1] == pos[index2][1] - 1:
+                G.add_edge(index, index2, weight=1)
+            if pos[index][1] == pos[index2][1] and pos[index][0] == pos[index2][0] - 1:
+                G.add_edge(index, index2, weight=1)
+    """
+    return G, pos
+
+
+def draw_graph3d(graph, fignum, clear=True, size=(1024, 768), graph_colormap='viridis', bgcolor = (1, 1, 1),
+                 node_color=(0.3, 0.65, 0.3), node_size=0.3,
+                 edge_color=(0.3, 0.3, 0.9), edge_size=0.05,
+                 text_size=0.008, text_color=(0, 0, 0)):
+
+    # https://stackoverflow.com/questions/17751552/drawing-multiplex-graphs-with-networkx
+    gr = graph #nx.convert_node_labels_to_integers(graph)
+    mlab.options.offscreen = True
+    graph_pos = nx.get_node_attributes(graph, 'pos')
+    
+    # numpy array of x, y, z positions in sorted node order
+    xyz = shrink_to_3d(np.array([graph_pos[v] for v in sorted(gr)]))
+    
+    # scalar colors
+    scalars = np.array([n for n in gr.nodes()])
+    
+    if mlab.options.offscreen:
+        mlab.figure(fignum, bgcolor=bgcolor, size=size)
+    else:
+        if fignum == 0:
+            mlab.figure(fignum, bgcolor=bgcolor, size=size)
+
+    if clear:
+        mlab.clf()
+
+    #----------------------------------------------------------------------------
+    # the x,y, and z co-ordinates are here
+    # manipulate them to obtain the desired projection perspective 
+
+    pts = mlab.points3d(xyz[:,0], xyz[:,1], xyz[:,2],
+                        # scalars,
+                        scale_factor=node_size,
+                        scale_mode='none',
+                        color=node_color,
+                        colormap=graph_colormap,
+                        resolution=20,
+                        transparent=False)
+    #----------------------------------------------------------------------------
+    """
+    for i, (x, y, z) in enumerate(xyz):
+        label = mlab.text(x, y, str(i), z=z,
+                          width=text_size, name=str(i), color=text_color)
+        label.property.shadow = True
+    """
+    pts.mlab_source.dataset.lines = np.array([e for e in gr.edges()])
+    tube = mlab.pipeline.tube(pts, tube_radius=edge_size)
+    mlab.pipeline.surface(tube, color=edge_color)
+
+    #mlab.close(fignum)
+    #mlab.show() # interactive window
+
+
+def read_ids_data(data_file, data_type='normal', labels_file='NSL_KDD/Field Names.csv'):
+    # "Label" - "converter function" dictionary.
+    label_dict = OrderedDict()
+    result = []
+
+    with open(labels_file) as lf:
+        labels = csv.reader(lf)
+        for label in labels:
+            if len(label) == 1 or label[1] == 'continuous':
+                label_dict[label[0]] = lambda l: np.float64(l)
+            elif label[1] == 'symbolic':
+                label_dict[label[0]] = lambda l: hash(l)
+
+    f_list = [i for i in label_dict.values()]
+
+    with open(data_file) as df:
+        # data = csv.DictReader(df, label_dict.keys())
+        data = csv.reader(df)
+        for d in data:
+            # Last two fields
+            if d[-2] == data_type:
+                result.append(tuple(f_list[n](i) for n, i in enumerate(d[:-2])))
+
+    return result
 
 
 class GNG():
-    """."""
+    """Growing Neural Gas multidimensional implementation"""
 
-    def __init__(self, data, eps_b=0.05, eps_n=0.0005, max_age=25,
+    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=25,
                  lambda_=100, alpha=0.5, d=0.0005, max_nodes=100):
         """."""
         self.graph = nx.Graph()
@@ -70,6 +196,7 @@ class GNG():
         self.d = d
         self.max_nodes = max_nodes
         self.num_of_input_signals = 0
+        self._surface_graph = surface_graph
 
         self.pos = None
 
@@ -77,20 +204,29 @@ class GNG():
         node2 = data[np.random.randint(0, len(data))]
 
         # make sure you dont select same positions
-        if node1[0] == node2[0] and node1[1] == node2[1]:
+        if self.is_nodes_equal(node1, node2):
             print("Rerun ---------------> similar nodes selected")
             return None
 
         # initialize here
         self.count = 0
-        self.graph.add_node(self.count, pos=(node1[0], node1[1]), error=0)
+        self.graph.add_node(self.count, pos=node1, error=0)
         self.count += 1
-        self.graph.add_node(self.count, pos=(node2[0], node2[1]), error=0)
+        self.graph.add_node(self.count, pos=node2, error=0)
         self.graph.add_edge(self.count - 1, self.count, age=0)
+
+    def number_of_clusters(self):
+        return nx.number_connected_components(self.graph)
+
+    def is_nodes_equal(self, n1, n2):
+        return len(set(n1) & set(n2)) == len(n1)
 
     def distance(self, a, b):
         """Calculate distance between two points."""
-        return ((a[0] - b[0])**2 + (a[1] - b[1])**2)
+
+        # Euclidian distance.
+        # return sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+        return euclidean(a, b)
 
     def determine_2closest_vertices(self, curnode):
         """Where this curnode is actually the x,y index of the data we want to analyze."""
@@ -109,15 +245,15 @@ class GNG():
 
     def get_new_position(self, winnerpos, nodepos):
         """."""
-        move_delta = [self.eps_b * (nodepos[0] - winnerpos[0]), self.eps_b * (nodepos[1] - winnerpos[1])]
-        newpos = [winnerpos[0] + move_delta[0], winnerpos[1] + move_delta[1]]
+        move_delta = tuple(self.eps_b * (i - j) for i, j in zip(nodepos, winnerpos))
+        newpos = tuple(i + j for i, j in zip(move_delta, winnerpos))
 
         return newpos
 
     def get_new_position_neighbors(self, neighborpos, nodepos):
         """."""
-        movement = [self.eps_n * (nodepos[0] - neighborpos[0]), self.eps_n * (nodepos[1] - neighborpos[1])]
-        newpos = [neighborpos[0] + movement[0], neighborpos[1] + movement[1]]
+        movement = tuple(self.eps_n * (i - j) for i, j in zip(nodepos, neighborpos))
+        newpos = tuple(i + j for i, j in zip(neighborpos, movement))
 
         return newpos
 
@@ -177,30 +313,32 @@ class GNG():
 
     def get_average_dist(self, a, b):
         """."""
-        av_dist = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+        av_dist = tuple((i + j) / 2 for i, j in zip(a, b))
 
         return av_dist
 
     def save_img(self, fignum, output_images_dir='images'):
         """."""
-        fig = pl.figure(fignum)
-        ax = fig.add_subplot(111)
 
-        nx.draw(G, pos, node_color='#ffffff', with_labels=False, node_size=100, alpha=0.5, width=1.5)
-
-        position = nx.get_node_attributes(self.graph, 'pos')
-        nx.draw(self.graph, position, node_color='r', node_size=100, with_labels=False, edge_color='b', width=1.5)
-        pl.title('Growing Neural Gas')
-        pl.savefig("{0}/{1}.png".format(output_images_dir, str(fignum)))
-
-        pl.clf()
-        pl.close(fignum)
+        #fig = pl.figure(fignum)
+        #ax = fig.add_subplot(111, projection='3d')
+        if self._surface_graph is not None:
+            #nx.draw(self._surface_graph, self._surface_pos, node_color='#ffffff', with_labels=False, node_size=100, alpha=0.5, width=1.5)
+            draw_graph3d(self._surface_graph, fignum)
+         
+        #position = nx.get_node_attributes(self.graph, 'pos')
+        draw_graph3d(self.graph, fignum, clear=False, node_color=(1, 0, 0))
+        #nx.draw(self.graph, position, node_color='r', node_size=100, with_labels=False, edge_color='b', width=1.5, dim=3)
+        #pl.title('Growing Neural Gas')
+        mlab.savefig("{0}/{1}.png".format(output_images_dir, str(fignum)))
 
     def train(self, max_iterations=10000, output_images_dir='images'):
         """."""
 
-        if not os.path.isdir(output_images_dir):
-            os.makedirs(output_images_dir)
+        if os.path.isdir(output_images_dir):
+            shutil.rmtree('{}'.format(output_images_dir))
+
+        os.makedirs(output_images_dir)
 
         print("Ouput images will be saved in: {0}".format(output_images_dir))
         fignum = 0
@@ -266,19 +404,6 @@ class GNG():
                     self.graph.add_node(i, error=newerror)
 
 
-def main():
-    """."""
-    global pos, G
-    G = read_file_draw_graph()
-
-    inList = []
-    for key, value in iteritems(pos):
-        inList.append([value[0], value[1]])
-
-    mat = np.array(inList, dtype='float64')
-    return mat
-
-
 def sort_nicely(limages):
     """."""
     def convert(text): return int(text) if text.isdigit() else text
@@ -298,12 +423,33 @@ def convert_images_to_gif(output_images_dir, output_gif):
     imageio.mimsave(output_gif, images)
 
 
-if __name__ == "__main__":
+def main():
+    """."""
 
-    data = main()
-    grng = GNG(data)
+    #read_ids_data('NSL_KDD/Small Training Set.csv')
+    #read_ids_data('NSL_KDD/20 Percent Training Set.csv')
+    #read_ids_data('NSL_KDD/KDDTrain+.txt')
+
+    G, pos = create_test_data_graph(read_test_file())
+    #G, pos = create_data_graph(read_ids_data('NSL_KDD/Small Training Set.csv'))
+
+    data = []
+    for key, value in iteritems(pos):
+        data.append([value[0], value[1], 0])
+
+    data = np.array(data, dtype='float32')
+
+    grng = GNG(data, surface_graph=G)
+
     output_images_dir = 'images'
-    output_gif = "output.gif"
+    output_gif = 'output.gif'
     if grng is not None:
-        grng.train(max_iterations=10000)
+        grng.train(max_iterations=500)
+        print('Clusters count: {}'.format(grng.number_of_clusters()))
         convert_images_to_gif(output_images_dir, output_gif)
+
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())

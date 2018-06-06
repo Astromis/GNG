@@ -17,6 +17,12 @@ import glob
 from past.builtins import xrange
 from future.utils import iteritems
 
+def sh(s):
+    sum = 0
+    for i, c in enumerate(s):
+        sum += i * ord(c)
+    return sum
+
 
 def shrink_to_3d(data):
     result = []
@@ -154,8 +160,34 @@ def draw_graph3d(graph, fignum, clear=True, size=(1024, 768), graph_colormap='vi
     #mlab.show() # interactive window
 
 
-def read_ids_data(data_file, data_type='normal', labels_file='NSL_KDD/Field Names.csv'):
-    # "Label" - "converter function" dictionary.
+def generate_host_activity(is_normal):
+    # Host loads is changed only in 25% cases.
+    attack_percent = 25
+    up_level = (20, 30)
+
+    # CPU load in percent.
+    cpu_load = (10, 30)
+    # Disk IO per second.
+    iops = (10, 50)
+    # Memory consumption in percent.
+    mem_cons = (30, 60)
+
+    cur_up_level = 0
+
+    if not is_normal and np.random.randint(0, 100) < attack_percent:
+        cur_up_level = np.random.randint(*up_level)
+
+    cpu_load = np.random.randint(cur_up_level + cpu_load[0], cur_up_level + cpu_load[1])
+    iops = np.random.randint(cur_up_level + iops[0], cur_up_level + iops[1])
+    mem_cons = np.random.randint(cur_up_level + mem_cons[0], cur_up_level + mem_cons[1])
+
+    return cpu_load, iops, mem_cons
+
+
+def read_ids_data(data_file, is_normal=True, labels_file='NSL_KDD/Field Names.csv', with_host=False):
+    selected_parameters = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent']
+
+    # "Label" - "converter function" dictionary.    
     label_dict = OrderedDict()
     result = []
 
@@ -165,17 +197,26 @@ def read_ids_data(data_file, data_type='normal', labels_file='NSL_KDD/Field Name
             if len(label) == 1 or label[1] == 'continuous':
                 label_dict[label[0]] = lambda l: np.float64(l)
             elif label[1] == 'symbolic':
-                label_dict[label[0]] = lambda l: hash(l)
+                label_dict[label[0]] = lambda l: sh(l)
 
     f_list = [i for i in label_dict.values()]
+    n_list = [i for i in label_dict.keys()]
+
+    data_type = lambda t: t == 'normal' if is_normal else t != 'normal'
 
     with open(data_file) as df:
         # data = csv.DictReader(df, label_dict.keys())
         data = csv.reader(df)
         for d in data:
-            # Last two fields
-            if d[-2] == data_type:
-                result.append(tuple(f_list[n](i) for n, i in enumerate(d[:-2])))
+            if data_type(d[-2]):
+                # Skip last two fields and add only specified fields.
+                net_params = tuple(f_list[n](i) for n, i in enumerate(d[:-2]) if n_list[n] in selected_parameters)
+
+                if with_host:
+                    host_params = generate_host_activity(is_normal)
+                    result.append(net_params + host_params)
+                else:
+                    result.append(net_params)
 
     return result
 
@@ -426,12 +467,13 @@ def convert_images_to_gif(output_images_dir, output_gif):
 def main():
     """."""
 
-    #read_ids_data('NSL_KDD/Small Training Set.csv')
+    read_ids_data('NSL_KDD/Small Training Set.csv')
     #read_ids_data('NSL_KDD/20 Percent Training Set.csv')
+    #read_ids_data('NSL_KDD/20 Percent Training Set.csv', is_normal=False)
     #read_ids_data('NSL_KDD/KDDTrain+.txt')
 
-    G, pos = create_test_data_graph(read_test_file())
-    #G, pos = create_data_graph(read_ids_data('NSL_KDD/Small Training Set.csv'))
+    #G, pos = create_test_data_graph(read_test_file())
+    G, pos = create_data_graph(read_ids_data('NSL_KDD/Small Training Set.csv'))
 
     data = []
     for key, value in iteritems(pos):

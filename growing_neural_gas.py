@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Initialize module utils."""
 
-from math import sqrt
 from mayavi import mlab
 import imageio
 from collections import OrderedDict
@@ -17,6 +16,7 @@ import shutil
 import glob
 from past.builtins import xrange
 from future.utils import iteritems
+
 
 def sh(s):
     sum = 0
@@ -33,17 +33,17 @@ def shrink_to_3d(data):
         if depth <=3:
             result.append(i)
         else:
-            sm = np.sum(i)
-            sm = depth - sm
+            sm = np.sum([(n) * v for n, v in enumerate(i[2:])])
             if sm == 0:
                 sm = 1
 
-            i0 = i[0]
-            i1 = i[1]
-            i2 = i[2]
-            result.append([i0 * depth / sm, i1 * depth / sm, i2 * depth / sm])
+            r = np.array([i[0], i[1], i[2]])
+            r *= sm
+            r /= np.sum(r)
+
+            result.append(r)
             
-    return np.array(result)
+    return preprocessing.normalize(result)
 
 
 def read_test_file():
@@ -98,59 +98,71 @@ def create_data_graph(dots):
 
     pos = nx.get_node_attributes(G, 'pos')
 
-    """
-    for index in pos.keys():
-        for index2 in pos.keys():
-            if pos[index][0] == pos[index2][0] and pos[index][1] == pos[index2][1] - 1:
-                G.add_edge(index, index2, weight=1)
-            if pos[index][1] == pos[index2][1] and pos[index][0] == pos[index2][0] - 1:
-                G.add_edge(index, index2, weight=1)
-    """
     return G, pos
 
 
-def draw_graph3d(graph, fignum, clear=True, size=(1024, 768), graph_colormap='viridis', bgcolor = (1, 1, 1),
-                 node_color=(0.3, 0.65, 0.3), node_size=0.07,
-                 edge_color=(0.3, 0.3, 0.9), edge_size=0.02,
-                 text_size=0.008, text_color=(0, 0, 0)):
+def get_ra(ra=0, ra_step=0.3):
+    while True:
+        if ra >= 360:
+            ra = 0
+        else:
+            ra += ra_step
+        yield ra
+
+
+def draw_graph3d(graph, fignum, clear=True,
+                 size=(1024, 768), graph_colormap='viridis',
+                 bgcolor = (1, 1, 1),
+                 node_color=(0.3, 0.65, 0.3), node_size=0.01,
+                 edge_color=(0.3, 0.3, 0.9), edge_size=0.003,
+                 text_size=0.008, text_color=(0, 0, 0),
+                 title_size=0.3,
+                 angle=get_ra()):
 
     # https://stackoverflow.com/questions/17751552/drawing-multiplex-graphs-with-networkx
+
     gr = graph #nx.convert_node_labels_to_integers(graph)
-    mlab.options.offscreen = True
     graph_pos = nx.get_node_attributes(graph, 'pos')
     
     # numpy array of x, y, z positions in sorted node order
-    xyz = preprocessing.scale(shrink_to_3d(preprocessing.normalize(np.array([graph_pos[v] for v in sorted(gr)]), copy=False)), copy=False, with_mean=False)
+    xyz = shrink_to_3d(np.array([graph_pos[v] for v in sorted(gr)]))
 
     # scalar colors
     scalars = np.array([n for n in gr.nodes()])
     
     if mlab.options.offscreen:
-        mlab.figure(fignum, bgcolor=bgcolor, size=size)
+        fig = mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
     else:
         if fignum == 0:
-            mlab.figure(fignum, bgcolor=bgcolor, size=size)
+            fig = mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
 
     if clear:
         mlab.clf()
 
     # the x,y, and z co-ordinates are here
     # manipulate them to obtain the desired projection perspective 
-
     pts = mlab.points3d(xyz[:,0], xyz[:,1], xyz[:,2],
                         #scalars,
                         scale_factor=node_size,
                         scale_mode='none',
                         color=node_color,
-                        colormap=graph_colormap,
+                        #colormap=graph_colormap,
                         resolution=20,
                         transparent=False)
+
+    if clear:
+        mlab.title('Growing Neuron Gas for the network anomalities detection', height=0.95)
+        mlab.roll(next(angle))
+        mlab.orientation_axes(pts)
+        mlab.outline(pts)
+
     """
     for i, (x, y, z) in enumerate(xyz):
         label = mlab.text(x, y, str(i), z=z,
                           width=text_size, name=str(i), color=text_color)
         label.property.shadow = True
     """
+
     pts.mlab_source.dataset.lines = np.array([e for e in gr.edges()])
     tube = mlab.pipeline.tube(pts, tube_radius=edge_size)
     mlab.pipeline.surface(tube, color=edge_color)
@@ -224,7 +236,7 @@ class GNG():
     """Growing Neural Gas multidimensional implementation"""
 
     def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=25,
-                 lambda_=100, alpha=0.5, d=0.0005, max_nodes=100,
+                 lambda_=100, alpha=0.5, d=0.0005, max_nodes=1000,
                  output_images_dir='images'):
         """."""
         self.graph = nx.Graph()
@@ -240,6 +252,7 @@ class GNG():
         self._surface_graph = surface_graph
 
         self.pos = None
+        self._fignum = 0
 
         node1 = data[np.random.randint(0, len(data))]
         node2 = data[np.random.randint(0, len(data))]
@@ -264,7 +277,6 @@ class GNG():
         os.makedirs(output_images_dir)
 
         print("Ouput images will be saved in: {0}".format(output_images_dir))
-        self._fignum = 0
 
     def number_of_clusters(self):
         return nx.number_connected_components(self.graph)
@@ -469,6 +481,7 @@ def convert_images_to_gif(output_images_dir, output_gif):
 def main():
     """."""
 
+    mlab.options.offscreen = True
     output_images_dir = 'images'
     #read_ids_data('NSL_KDD/Small Training Set.csv')
     #read_ids_data('NSL_KDD/20 Percent Training Set.csv')
@@ -476,20 +489,19 @@ def main():
     #read_ids_data('NSL_KDD/KDDTrain+.txt')
 
     #G, pos = create_test_data_graph(read_test_file())
-    G, pos = create_data_graph(read_ids_data('NSL_KDD/Small Training Set.csv'))
+    data = read_ids_data('NSL_KDD/Small Training Set.csv')
+    data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
+    G, pos = create_data_graph(data)
     #G, pos = create_data_graph(read_ids_data('NSL_KDD/20 Percent Training Set.csv'))
-
-    data = []
-    for key, value in iteritems(pos):
-        data.append([value[0], value[1], 0])
-
-    data = np.array(data, dtype='float32')
+    #data = []
+    #for key, value in iteritems(pos):
+    #    data.append(value)
 
     grng = GNG(data, surface_graph=G, output_images_dir=output_images_dir)
 
     output_gif = 'output.gif'
     if grng is not None:
-        grng.train(max_iterations=5000)
+        grng.train(max_iterations=10000)
         print('Clusters count: {}'.format(grng.number_of_clusters()))
         convert_images_to_gif(output_images_dir, output_gif)
 

@@ -3,6 +3,7 @@
 """Initialize module utils."""
 
 from mayavi import mlab
+import operator
 import imageio
 from collections import OrderedDict
 from scipy.spatial.distance import euclidean
@@ -131,10 +132,10 @@ def draw_graph3d(graph, fignum, clear=True,
     scalars = np.array([n for n in gr.nodes()])
     
     if mlab.options.offscreen:
-        fig = mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
+        mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
     else:
         if fignum == 0:
-            fig = mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
+            mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
 
     if clear:
         mlab.clf()
@@ -151,7 +152,7 @@ def draw_graph3d(graph, fignum, clear=True,
                         transparent=False)
 
     if clear:
-        mlab.title('Growing Neuron Gas for the network anomalities detection', height=0.95)
+        mlab.title('Growing Neuron Gas for the network anomalies detection', height=0.95)
         mlab.roll(next(angle))
         mlab.orientation_axes(pts)
         mlab.outline(pts)
@@ -249,9 +250,13 @@ class GNG():
         self.d = d
         self.max_nodes = max_nodes
         self.num_of_input_signals = 0
+        self._stat = {
+            'nodes': 0, # removed or added nodes per iter.
+            'edges': 0, # removed or added edges per iter.
+        }
         self._surface_graph = surface_graph
 
-        self.pos = None
+        self._pos = None
         self._fignum = 0
 
         node1 = data[np.random.randint(0, len(data))]
@@ -293,9 +298,9 @@ class GNG():
 
     def determine_2closest_vertices(self, curnode):
         """Where this curnode is actually the x,y index of the data we want to analyze."""
-        self.pos = nx.get_node_attributes(self.graph, 'pos')
+        self._pos = nx.get_node_attributes(self.graph, 'pos')
         templist = []
-        for node, position in iteritems(self.pos):
+        for node, position in iteritems(self._pos):
             dist = self.distance(curnode, position)
             templist.append([node, dist])
 
@@ -339,15 +344,15 @@ class GNG():
         self.graph.add_node(winnernode, error=newerror)
 
         # move the winner node towards current node
-        self.pos = nx.get_node_attributes(self.graph, 'pos')
-        newposition = self.get_new_position(self.pos[winnernode], curnode)
+        self._pos = nx.get_node_attributes(self.graph, 'pos')
+        newposition = self.get_new_position(self._pos[winnernode], curnode)
         self.graph.add_node(winnernode, pos=newposition)
 
         # now update all the neighbors distances and their ages
         neighbors = nx.all_neighbors(self.graph, winnernode)
         age_of_edges = nx.get_edge_attributes(self.graph, 'age')
         for n in neighbors:
-            newposition = self.get_new_position_neighbors(self.pos[n], curnode)
+            newposition = self.get_new_position_neighbors(self._pos[n], curnode)
             self.graph.add_node(n, pos=newposition)
             key = (int(winnernode), n)
             if key in age_of_edges:
@@ -358,24 +363,29 @@ class GNG():
 
         # no sense in what I am writing here, but with algorithm it goes perfect
         # if winnner and 2nd winner are connected, update their age to zero
+        """
         if (self.graph.get_edge_data(winnernode, winnernode2) is not None):
             self.graph.add_edge(winnernode, winnernode2, age=0)
         else:
             # else create an edge between them
             self.graph.add_edge(winnernode, winnernode2, age=0)
+        """
+        # Optimized code.
+        self.graph.add_edge(winnernode, winnernode2, age=0)
 
         # if there are ages more than maximum allowed age, remove them
         age_of_edges = nx.get_edge_attributes(self.graph, 'age')
         for edge, age in iteritems(age_of_edges):
 
             if age > self.max_age:
+                #!!!
                 self.graph.remove_edge(edge[0], edge[1])
 
-                # if it causes isolated vertix, remove that vertex as well
-
-                for node in self.graph.nodes():
-                    if not self.graph.neighbors(node):
-                        self.graph.remove_node(node)
+        # if it causes isolated vertix, remove that vertex as well
+        for node in self.graph.nodes():
+            if not self.graph.neighbors(node):
+                #!!!
+                self.graph.remove_node(node)
 
     def get_average_dist(self, a, b):
         """."""
@@ -408,7 +418,6 @@ class GNG():
                 if i % self.lambda_ == 0 and len(self.graph.nodes()) <= self.max_nodes:
                     # find a node with the largest error
                     errorvectors = nx.get_node_attributes(self.graph, 'error')
-                    import operator
                     node_largest_error = max(iteritems(errorvectors), key=operator.itemgetter(1))[0]
 
                     # find a node from neighbor of the node just found,
@@ -423,9 +432,9 @@ class GNG():
                             max_error_neighbor = n
 
                     # insert a new unit half way between these two
-                    self.pos = nx.get_node_attributes(self.graph, 'pos')
+                    self._pos = nx.get_node_attributes(self.graph, 'pos')
 
-                    newnodepos = self.get_average_dist(self.pos[node_largest_error], self.pos[max_error_neighbor])
+                    newnodepos = self.get_average_dist(self._pos[node_largest_error], self._pos[max_error_neighbor])
                     self.count = self.count + 1
                     newnode = self.count
                     self.graph.add_node(newnode, pos=newnodepos)

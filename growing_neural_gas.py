@@ -14,6 +14,7 @@ import networkx as nx
 import re
 import os
 import shutil
+import sys
 import glob
 from past.builtins import xrange
 from future.utils import iteritems
@@ -236,8 +237,8 @@ def read_ids_data(data_file, is_normal=True, labels_file='NSL_KDD/Field Names.cs
 class GNG():
     """Growing Neural Gas multidimensional implementation"""
 
-    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=25,
-                 lambda_=100, alpha=0.5, d=0.0005, max_nodes=1000,
+    def __init__(self, data, surface_graph=None, eps_b=0.2, eps_n=0.006, max_age=50,
+                 lambda_=100, alpha=0.5, d=0.995, max_nodes=1000,
                  output_images_dir='images'):
         """."""
         self.graph = nx.Graph()
@@ -298,18 +299,20 @@ class GNG():
 
     def determine_2closest_vertices(self, curnode):
         """Where this curnode is actually the x,y index of the data we want to analyze."""
-        self._pos = nx.get_node_attributes(self.graph, 'pos')
-        templist = []
-        for node, position in iteritems(self._pos):
+        #python growing_neural_gas.py  320,47s user 1,33s system 99% cpu 5:22,95 total
+        pos = self._pos = nx.get_node_attributes(self.graph, 'pos')
+
+        winner1 = [0, sys.maxint]
+        winner2 = [0, sys.maxint]
+
+        for node, position in iteritems(pos):
             dist = self.distance(curnode, position)
-            templist.append([node, dist])
+            if dist < winner1[1]:
+                winner1 = [node, dist]
+            if node != winner1[0] and dist < winner2[1]:
+                winner2 = [node, dist]
 
-        distlist = np.array(templist)
-
-        ind = np.lexsort((distlist[:, 0], distlist[:, 1]))
-        distlist = distlist[ind]
-
-        return distlist[0], distlist[1]
+        return winner1, winner2
 
     def get_new_position(self, winnerpos, nodepos):
         """."""
@@ -335,31 +338,32 @@ class GNG():
         winnernode = winner1[0]
         winnernode2 = winner2[0]
         win_dist_from_node = winner1[1]
+        graph = self.graph
 
         errorvectors = nx.get_node_attributes(self.graph, 'error')
 
         error1 = errorvectors[winner1[0]]
         # update the new error
         newerror = error1 + win_dist_from_node**2
-        self.graph.add_node(winnernode, error=newerror)
+        graph.add_node(winnernode, error=newerror)
 
         # move the winner node towards current node
-        self._pos = nx.get_node_attributes(self.graph, 'pos')
+        self._pos = nx.get_node_attributes(graph, 'pos')
         newposition = self.get_new_position(self._pos[winnernode], curnode)
-        self.graph.add_node(winnernode, pos=newposition)
+        graph.add_node(winnernode, pos=newposition)
 
         # now update all the neighbors distances and their ages
-        neighbors = nx.all_neighbors(self.graph, winnernode)
-        age_of_edges = nx.get_edge_attributes(self.graph, 'age')
+        neighbors = nx.all_neighbors(graph, winnernode)
+        age_of_edges = nx.get_edge_attributes(graph, 'age')
         for n in neighbors:
             newposition = self.get_new_position_neighbors(self._pos[n], curnode)
-            self.graph.add_node(n, pos=newposition)
+            graph.add_node(n, pos=newposition)
             key = (int(winnernode), n)
             if key in age_of_edges:
                 newage = age_of_edges[(int(winnernode), n)] + 1
             else:
                 newage = age_of_edges[(n, int(winnernode))] + 1
-            self.graph.add_edge(winnernode, n, age=newage)
+            graph.add_edge(winnernode, n, age=newage)
 
         # no sense in what I am writing here, but with algorithm it goes perfect
         # if winnner and 2nd winner are connected, update their age to zero
@@ -371,21 +375,21 @@ class GNG():
             self.graph.add_edge(winnernode, winnernode2, age=0)
         """
         # Optimized code.
-        self.graph.add_edge(winnernode, winnernode2, age=0)
+        graph.add_edge(winnernode, winnernode2, age=0)
 
         # if there are ages more than maximum allowed age, remove them
-        age_of_edges = nx.get_edge_attributes(self.graph, 'age')
+        age_of_edges = nx.get_edge_attributes(graph, 'age')
         for edge, age in iteritems(age_of_edges):
 
             if age > self.max_age:
                 #!!!
-                self.graph.remove_edge(edge[0], edge[1])
+                graph.remove_edge(edge[0], edge[1])
 
         # if it causes isolated vertix, remove that vertex as well
-        for node in self.graph.nodes():
-            if not self.graph.neighbors(node):
+        for node in graph.nodes():
+            if not graph.neighbors(node):
                 #!!!
-                self.graph.remove_node(node)
+                graph.remove_node(node)
 
     def get_average_dist(self, a, b):
         """."""
@@ -467,6 +471,16 @@ class GNG():
                     newerror = olderror - self.d * olderror
                     self.graph.add_node(i, error=newerror)
 
+        self._fignum = fignum
+
+    def test_node(self, node):
+        winner1, winner2 = self.determine_2closest_vertices(node)
+        winnernode = winner1[0]
+        winnernode2 = winner2[0]
+        win_dist_from_node = winner1[1]
+        graph = self.graph
+
+        errorvectors = nx.get_node_attributes(self.graph, 'error')
 
 def sort_nicely(limages):
     """."""
@@ -492,15 +506,14 @@ def main():
 
     mlab.options.offscreen = True
     output_images_dir = 'images'
-    #read_ids_data('NSL_KDD/Small Training Set.csv')
-    #read_ids_data('NSL_KDD/20 Percent Training Set.csv')
-    #read_ids_data('NSL_KDD/20 Percent Training Set.csv', is_normal=False)
-    #read_ids_data('NSL_KDD/KDDTrain+.txt')
 
     #G, pos = create_test_data_graph(read_test_file())
     data = read_ids_data('NSL_KDD/Small Training Set.csv')
+    #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
+    #data = read_ids_data('NSL_KDD/KDDTrain+.txt')
     data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
     G, pos = create_data_graph(data)
+
     #G, pos = create_data_graph(read_ids_data('NSL_KDD/20 Percent Training Set.csv'))
     #data = []
     #for key, value in iteritems(pos):
@@ -510,7 +523,7 @@ def main():
 
     output_gif = 'output.gif'
     if grng is not None:
-        grng.train(max_iterations=10000)
+        grng.train(max_iterations=1000)
         print('Clusters count: {}'.format(grng.number_of_clusters()))
         convert_images_to_gif(output_images_dir, output_gif)
 

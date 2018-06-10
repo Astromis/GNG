@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """Initialize module utils."""
 
+import gc
 from mayavi import mlab
 import operator
 import imageio
 from collections import OrderedDict
 from scipy.spatial.distance import euclidean
-from sklearn.metrics import calinski_harabaz_score
 from sklearn import preprocessing
 import csv
 import numpy as np
@@ -157,7 +157,6 @@ def draw_dots3d(dots, edges, fignum, clear=True,
     tube = mlab.pipeline.tube(pts, tube_radius=edge_size)
     mlab.pipeline.surface(tube, color=edge_color)
 
-    #mlab.close(fignum)
     #mlab.show() # interactive window
 
 
@@ -277,7 +276,7 @@ class IGNG():
         return nx.number_connected_components(self._graph)
 
     def train(self, max_iterations=100, save_step=0):
-        """."""
+        """IGNG training method"""
 
         fignum = self._fignum
         self.__save_img(fignum)
@@ -293,7 +292,7 @@ class IGNG():
         i_count = 0
 
         while old - calin <= 0:
-            print('Iteration {0:d}...'.format(fignum))
+            print('Iteration {0:d}...'.format(i_count))
             for i, x in enumerate(data):
                 uw(x)
                 if i % save_step == 0:
@@ -315,7 +314,6 @@ class IGNG():
         errorvectors = nx.get_node_attributes(self.graph, 'error')
 
     def __calinski_harabaz_score(self):
-        #calinski_harabaz_score(self.data, np.array([graph_pos[v] for v in sorted(self.graph)], dtype='float32'))
         graph = self._graph
         extra_disp, intra_disp = 0., 0.
 
@@ -456,6 +454,7 @@ class IGNG():
         draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0))
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
+        mlab.close(fignum)
 
 
 def sort_nicely(limages):
@@ -479,12 +478,12 @@ def convert_images_to_gif(output_images_dir, output_gif):
 
 def main():
     """."""
-
     mlab.options.offscreen = True
     output_images_dir = 'images'
 
     #G = create_test_data_graph(read_test_file())
-    data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='anomal')
+    #data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='anomal')
+    data = read_ids_data('NSL_KDD/KDDTest-21.txt', activity_type='anomal')
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     #data = read_ids_data('NSL_KDD/KDDTrain+.txt')
     data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)

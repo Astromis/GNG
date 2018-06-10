@@ -106,7 +106,7 @@ def shrink_to_3d(data):
     return preprocessing.normalize(result)
 
 
-def draw_graph3d(graph, fignum, clear=True,
+def draw_dots3d(dots, edges, fignum, clear=True,
                  size=(1024, 768), graph_colormap='viridis',
                  bgcolor = (1, 1, 1),
                  node_color=(0.3, 0.65, 0.3), node_size=0.01,
@@ -116,16 +116,10 @@ def draw_graph3d(graph, fignum, clear=True,
                  angle=get_ra()):
 
     # https://stackoverflow.com/questions/17751552/drawing-multiplex-graphs-with-networkx
-
-    gr = graph #nx.convert_node_labels_to_integers(graph)
-    graph_pos = nx.get_node_attributes(graph, 'pos')
-    
+   
     # numpy array of x, y, z positions in sorted node order
-    xyz = shrink_to_3d(np.array([graph_pos[v] for v in sorted(gr)], dtype='float32'))
+    xyz = shrink_to_3d(dots)
 
-    # scalar colors
-    #scalars = np.array([n for n in gr.nodes()])
-    
     if mlab.options.offscreen:
         mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
     else:
@@ -139,7 +133,6 @@ def draw_graph3d(graph, fignum, clear=True,
     # manipulate them to obtain the desired projection perspective 
 
     pts = mlab.points3d(xyz[:, 0], xyz[:, 1], xyz[:, 2],
-                        # scalars,
                         scale_factor=node_size,
                         scale_mode='none',
                         color=node_color,
@@ -160,12 +153,20 @@ def draw_graph3d(graph, fignum, clear=True,
         label.property.shadow = True
     """
 
-    pts.mlab_source.dataset.lines = np.array([e for e in gr.edges()])
+    pts.mlab_source.dataset.lines = edges
     tube = mlab.pipeline.tube(pts, tube_radius=edge_size)
     mlab.pipeline.surface(tube, color=edge_color)
 
     #mlab.close(fignum)
     #mlab.show() # interactive window
+
+
+def draw_graph3d(graph, fignum, *args, **kwargs):
+    graph_pos = nx.get_node_attributes(graph, 'pos')
+    edges = np.array([e for e in graph.edges()])
+    dots = np.array([graph_pos[v] for v in sorted(graph)], dtype='float32')
+
+    draw_dots3d(dots, edges, fignum, *args, **kwargs)
 
 
 def generate_host_activity(is_normal):
@@ -192,7 +193,7 @@ def generate_host_activity(is_normal):
     return cpu_load, iops, mem_cons
 
 
-def read_ids_data(data_file, is_normal=True, labels_file='NSL_KDD/Field Names.csv', with_host=False):
+def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field Names.csv', with_host=False):
     selected_parameters = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent']
 
     # "Label" - "converter function" dictionary.    
@@ -210,7 +211,17 @@ def read_ids_data(data_file, is_normal=True, labels_file='NSL_KDD/Field Names.cs
     f_list = [i for i in label_dict.values()]
     n_list = [i for i in label_dict.keys()]
 
-    data_type = lambda t: t == 'normal' if is_normal else t != 'normal'
+    if activity_type == 'normal':
+        print('Reading anomal activity...')
+        data_type = lambda t: t == 'normal'
+    elif activity_type == 'anomal':
+        print('Reading normal activity...')
+        data_type = lambda t: t != 'normal'
+    elif activity_type == 'full':
+        print('Reading full activity...')
+        data_type = lambda t: True
+    else:
+        raise ValueError('`activity_type` must be "normal", "anomal" or "full"')
 
     with open(data_file) as df:
         # data = csv.DictReader(df, label_dict.keys())
@@ -236,26 +247,22 @@ class IGNG():
                  lambda_=100, a_mature=1, d=0.995, max_nodes=100,
                  output_images_dir='images'):
         """."""
-        self.graph = nx.Graph()
-        self.data = data
-        self.eps_b = eps_b
-        self.eps_n = eps_n
-        self.max_age = max_age
-        self.lambda_ = lambda_
-        self.a_mature = a_mature
-        self.d = d
-        self.max_nodes = max_nodes
-        self.num_of_input_signals = 0
-        self._stat = {
-            'nodes': 0, # removed or added nodes per iter.
-            'edges': 0, # removed or added edges per iter.
-        }
+        self._graph = nx.Graph()
+        self._data = data
+        self._eps_b = eps_b
+        self._eps_n = eps_n
+        self._max_age = max_age
+        self._lambda = lambda_
+        self._a_mature = a_mature
+        self._d = d
+        self._max_nodes = max_nodes
+        self._num_of_input_signals = 0
         self._surface_graph = surface_graph
 
         self._fignum = 0
 
         # initialize here
-        self.count = 0
+        self._count = 0
         
         self._output_images_dir = output_images_dir
 
@@ -266,60 +273,92 @@ class IGNG():
 
         print("Ouput images will be saved in: {0}".format(output_images_dir))
 
-    def calinski_harabaz_score(self):
-        return
+    def number_of_clusters(self):
+        return nx.number_connected_components(self._graph)
+
+    def train(self, max_iterations=100, save_step=0):
+        """."""
+
+        fignum = self._fignum
+        self.__save_img(fignum)
+        CHS = self.__calinski_harabaz_score
+        uw = self.__igng
+        data = self._data
+
+        if save_step < 1:
+            save_step = max_iterations
+
+        old = 0
+        calin = CHS()
+        i_count = 0
+
+        while old - calin <= 0:
+            print('Iteration {0:d}...'.format(fignum))
+            for i, x in enumerate(data):
+                uw(x)
+                if i % save_step == 0:
+                    self.__save_img(fignum)
+                    fignum += 1
+            self._d -= 0.1 * self._d
+            old = calin
+            calin = CHS()
+
+        self._fignum = fignum
+
+    def test_node(self, node):
+        winner1, winner2 = self.determine_2closest_vertices(node)
+        winnernode = winner1[0]
+        winnernode2 = winner2[0]
+        win_dist_from_node = winner1[1]
+        graph = self._graph
+
+        errorvectors = nx.get_node_attributes(self.graph, 'error')
+
+    def __calinski_harabaz_score(self):
         #calinski_harabaz_score(self.data, np.array([graph_pos[v] for v in sorted(self.graph)], dtype='float32'))
+        graph = self._graph
         extra_disp, intra_disp = 0., 0.
 
         # CHI = [B / (c - 1)]/[W / (n - c)]
         # Total numb er of neurons.
-        c = self.count
+        c = len(graph.nodes)
         # Total number of data.
-        n = len(self.data)
+        n = len(self._data)
         
         # Mean of the all data.
-        mean = np.mean(self.data, axis=0)
+        mean = np.mean(self._data, axis=0)
         
-        # Neuron reference vector.
-        nrv = np.array([graph_pos[v] for v in sorted(self.graph)], dtype='float32')
-        
-        print(mean, c, n, nrv)
-        print(mean - nrv)
-        exit(0)
+        pos = nx.get_node_attributes(self._graph, 'pos')
 
-        for k in range(n_labels):
-            cluster_k = X[labels == k]
-            mean_k = np.mean(cluster_k, axis=0)
-            extra_disp += len(cluster_k) * np.sum((mean_k - mean) ** 2)
-            intra_disp += np.sum((cluster_k - mean_k) ** 2)
+        for k in pos.values():
+            mean_k = np.mean(k)
+            extra_disp += len(k) * np.sum((mean_k - mean) ** 2)
+            intra_disp += np.sum((k - mean_k) ** 2)
 
         return (1. if intra_disp == 0. else
-                extra_disp * (n_samples - n_labels) /
-                (intra_disp * (n_labels - 1.)))
+                extra_disp * (n - c) /
+                (intra_disp * (c - 1.)))
 
-    def number_of_clusters(self):
-        return nx.number_connected_components(self.graph)
-
-    def is_nodes_equal(self, n1, n2):
+    def __is_nodes_equal(self, n1, n2):
         return len(set(n1) & set(n2)) == len(n1)
 
-    def distance(self, a, b):
+    def __distance(self, a, b):
         """Calculate distance between two points."""
 
         # Euclidian distance.
         # return sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
         return euclidean(a, b)
 
-    def determine_2closest_vertices(self, curnode):
+    def __determine_2closest_vertices(self, curnode):
         """Where this curnode is actually the x,y index of the data we want to analyze."""
         #python growing_neural_gas.py  320,47s user 1,33s system 99% cpu 5:22,95 total
-        pos = nx.get_node_attributes(self.graph, 'pos')
+        pos = nx.get_node_attributes(self._graph, 'pos')
 
         winner1 = None
         winner2 = None
 
         for node, position in iteritems(pos):
-            dist = self.distance(curnode, position)
+            dist = self.__distance(curnode, position)
             if winner1 is None or dist < winner1[1]:
                 winner1 = [node, dist]
                 continue
@@ -328,27 +367,32 @@ class IGNG():
 
         return winner1, winner2
 
-    def update_winner(self, cur_node):
+    def __get_specific_nodes(self, n_type):
+        return [n for n, p in nx.get_node_attributes(self._graph, 'n_type').items() if p == n_type]
+
+    def __igng(self, cur_node):
         """."""
 
         # find nearest unit and second nearest unit
-        winner1, winner2 = self.determine_2closest_vertices(cur_node)
-        graph = self.graph
+        winner1, winner2 = self.__determine_2closest_vertices(cur_node)
+        graph = self._graph
+        nodes = graph.nodes
+        d = self._d
 
-        if winner1 is None or winner1[1] >= self.d:
+        if winner1 is None or winner1[1] >= d:
             # 0 - is an embryo type.
-            graph.add_node(self.count, pos=cur_node, error=0, n_type=0, age=0)
-            winner_node1 = self.count
-            self.count += 1
+            graph.add_node(self._count, pos=cur_node, error=0, n_type=0, age=0)
+            winner_node1 = self._count
+            self._count += 1
             return
         else:
             winner_node1 = winner1[0]
 
-        if winner2 is None or winner2[1] >= self.d:
+        if winner2 is None or winner2[1] >= d:
             # 0 - is an embryo type.
-            graph.add_node(self.count, pos=cur_node, error=0, n_type=0, age=0)
-            winner_node2 = self.count
-            self.count += 1
+            graph.add_node(self._count, pos=cur_node, error=0, n_type=0, age=0)
+            winner_node2 = self._count
+            self._count += 1
             graph.add_edge(winner_node1, winner_node2, age=0)
             return
         else:
@@ -358,17 +402,17 @@ class IGNG():
         for e in graph.edges(winner_node1, data=True):
             e[2]['age'] += 1
 
-        w_node = graph.nodes[winner_node1]
+        w_node = nodes[winner_node1]
         # Move the winner node towards current node.
-        w_node['pos'] += self.eps_b * (cur_node - w_node['pos']) #self.get_new_position(w_node['pos'], cur_node)
+        w_node['pos'] += self._eps_b * (cur_node - w_node['pos'])
 
         neighbors = nx.all_neighbors(graph, winner_node1)
-        a_mature = self.a_mature
+        a_mature = self._a_mature
 
         for n in neighbors:
-            c_node = graph.nodes[n]
+            c_node = nodes[n]
             # Move all direct neighbors of the winner.
-            c_node['pos'] += self.eps_n * (cur_node - c_node['pos'])
+            c_node['pos'] += self._eps_n * (cur_node - c_node['pos'])
             # Increment the age of all direct neighbors of the winner.
             c_node['age'] += 1
             if c_node['n_type'] == 0 and c_node['age'] >= a_mature:
@@ -378,7 +422,7 @@ class IGNG():
         # Create connection with age == 0 between two winners.
         graph.add_edge(winner_node1, winner_node2, age=0)
 
-        max_age = self.max_age
+        max_age = self._max_age
 
         # If there are ages more than maximum allowed age, remove them.
         age_of_edges = nx.get_edge_attributes(graph, 'age')
@@ -388,18 +432,12 @@ class IGNG():
                 graph.remove_edge(edge[0], edge[1])
 
         # if it causes isolated vertix, remove that vertex as well
-        for node in graph.nodes():
+        for node in nodes():
             if not graph.neighbors(node):
                 #!!!
                 graph.remove_node(node)
 
-    def get_average_dist(self, a, b):
-        """."""
-        av_dist = tuple((i + j) / 2 for i, j in zip(a, b))
-
-        return av_dist
-
-    def save_img(self, fignum):
+    def __save_img(self, fignum):
         """."""
 
         if self._surface_graph is not None:
@@ -408,34 +446,17 @@ class IGNG():
         if not fignum:
             return
 
-        draw_graph3d(self.graph, fignum, clear=False, node_color=(1, 0, 0))
+        graph = self._graph
+        #graph_pos = nx.get_node_attributes(graph, 'pos')
+        #nodes = sorted(self.get_specific_nodes(1))
+        #dots = np.array([graph_pos[v] for v in nodes], dtype='float32')
+        #edges = np.array([e for e in graph.edges(nodes) if e[0] in nodes and e[1] in nodes])
+        #draw_dots3d(dots, edges, fignum, clear=False, node_color=(1, 0, 0))
+
+        draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0))
+
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
 
-    def train(self, max_iterations=100):
-        """."""
-
-        fignum = self._fignum
-        self.save_img(fignum)
-
-        for i in xrange(1, max_iterations):
-            print('CHS', self.calinski_harabaz_score())
-            print('Iterating..{0:d}/{1}'.format(i, max_iterations))
-            for x in self.data:
-                self.update_winner(x)
-            self.d -= 0.1 * self.d
-            fignum += 1
-            self.save_img(fignum)
-
-        self._fignum = fignum
-
-    def test_node(self, node):
-        winner1, winner2 = self.determine_2closest_vertices(node)
-        winnernode = winner1[0]
-        winnernode2 = winner2[0]
-        win_dist_from_node = winner1[1]
-        graph = self.graph
-
-        errorvectors = nx.get_node_attributes(self.graph, 'error')
 
 def sort_nicely(limages):
     """."""
@@ -463,7 +484,7 @@ def main():
     output_images_dir = 'images'
 
     #G = create_test_data_graph(read_test_file())
-    data = read_ids_data('NSL_KDD/Small Training Set.csv')
+    data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='anomal')
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     #data = read_ids_data('NSL_KDD/KDDTrain+.txt')
     data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
@@ -478,7 +499,7 @@ def main():
 
     output_gif = 'output.gif'
     if gng is not None:
-        gng.train(max_iterations=20)
+        gng.train(max_iterations=1, save_step=50)
         print('Clusters count: {}'.format(gng.number_of_clusters()))
         convert_images_to_gif(output_images_dir, output_gif)
 

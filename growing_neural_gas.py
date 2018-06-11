@@ -78,12 +78,12 @@ def draw_dots3d(dots, edges, fignum, clear=True,
                  bgcolor = (1, 1, 1),
                  node_color=(0.3, 0.65, 0.3), node_size=0.01,
                  edge_color=(0.3, 0.3, 0.9), edge_size=0.003,
-                 text_size=0.008, text_color=(0, 0, 0),
+                 text_size=0.14, text_color=(0, 0, 0), text_coords=[0.84, 0.75], text={},
                  title_size=0.3,
                  angle=get_ra()):
 
     # https://stackoverflow.com/questions/17751552/drawing-multiplex-graphs-with-networkx
-   
+
     # numpy array of x, y, z positions in sorted node order
     xyz = shrink_to_3d(dots)
 
@@ -97,7 +97,7 @@ def draw_dots3d(dots, edges, fignum, clear=True,
         mlab.clf()
 
     # the x,y, and z co-ordinates are here
-    # manipulate them to obtain the desired projection perspective 
+    # manipulate them to obtain the desired projection perspective
 
     pts = mlab.points3d(xyz[:, 0], xyz[:, 1], xyz[:, 2],
                         scale_factor=node_size,
@@ -106,6 +106,8 @@ def draw_dots3d(dots, edges, fignum, clear=True,
                         #colormap=graph_colormap,
                         resolution=20,
                         transparent=False)
+
+    mlab.text(text_coords[0], text_coords[1], '\n'.join(['{} = {}'.format(n, v) for n, v in text.items()]), width=text_size)
 
     if clear:
         mlab.title('Growing Neuron Gas for the network anomalies detection', height=0.95)
@@ -162,7 +164,7 @@ def generate_host_activity(is_normal):
 def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field Names.csv', with_host=False):
     selected_parameters = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent']
 
-    # "Label" - "converter function" dictionary.    
+    # "Label" - "converter function" dictionary.
     label_dict = OrderedDict()
     result = []
 
@@ -186,7 +188,8 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
     else:
         raise ValueError('`activity_type` must be "normal", "anomal" or "full"')
 
-    print('Reading {} activity from the file "{}"...'.format(activity_type, data_file))
+    print('Reading {} activity from the file "{}" [generated host data {} included]...'.
+          format(activity_type, data_file, 'was' if with_host else 'was not'))
 
     with open(data_file) as df:
         # data = csv.DictReader(df, label_dict.keys())
@@ -197,11 +200,11 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
                 net_params = tuple(f_list[n](i) for n, i in enumerate(d[:-2]) if n_list[n] in selected_parameters)
 
                 if with_host:
-                    host_params = generate_host_activity(is_normal)
+                    host_params = generate_host_activity(activity_type != 'anomal')
                     result.append(net_params + host_params)
                 else:
                     result.append(net_params)
-
+    print('Records count: {}'.format(len(result)))
     return result
 
 
@@ -227,6 +230,8 @@ class IGNG():
         self._surface_graph = surface_graph
         self._fignum = 0
         self._count = 0
+        self._max_train_iters = 0
+        self._start_time = time.time()
 
         # Initial value is a standard deviation of the data.
         self._d = np.std(data)
@@ -243,14 +248,50 @@ class IGNG():
     def number_of_clusters(self):
         return nx.number_connected_components(self._graph)
 
+    def test_node(self, node, train=True):
+        dist = self.__determine_closest_vertice_distance(node)
+        # Three-sigma rule.
+        dist_sub_dev = dist - 3 * self.__calculate_deviation_params()
+        if dist_sub_dev > 0:
+            #print('Anomaly', dist, self.__calculate_deviation_params(), dist_sub_dev)
+            return dist_sub_dev
+
+        if train:
+            self.__train_on_data_item(node)
+        return 0
+
+    def detect_anomalies(self, data, threshold=10, train=False):
+        anomalies_counter, anomaly_records_counter, normal_records_counter = 0, 0, 0
+        anomaly_level = 0
+
+        for d in data:
+            risk_level = self.test_node(d)
+            if risk_level != 0:
+                anomaly_records_counter += 1
+                anomaly_level += risk_level
+                if anomaly_level > threshold:
+                    anomalies_counter += 1
+                    print('Anomaly was detected [count = {}]!'.format(anomalies_counter))
+                    anomaly_level = 0
+            else:
+                normal_records_counter += 1
+
+        print('{} [anomaly records = {}, normal records = {}]'.format('Anomalies were detected (count = {})'.format(anomalies_counter) if anomalies_counter
+                                                                     else 'Anomalies were\'t detected',
+                                                                     anomaly_records_counter, normal_records_counter))
+
+        return anomalies_counter > 0
+
     def train(self, max_iterations=100, save_step=0):
         """IGNG training method"""
 
         self._dev_params = None
+        self._max_train_iters = max_iterations
+
         fignum = self._fignum
         self.__save_img(fignum)
         CHS = self.__calinski_harabaz_score
-        uw = self.__igng
+        igng = self.__igng
         data = self._data
 
         if save_step < 1:
@@ -259,33 +300,69 @@ class IGNG():
         old = 0
         calin = CHS()
         i_count = 0
-        start_time = time.time()
+        start_time = self._start_time = time.time()
 
         while old - calin <= 0:
             print('Iteration {0:d}...'.format(i_count))
             i_count += 1
-            for i, x in enumerate(data):
-                uw(x)
-                if i % save_step == 0:
-                    t = round(time.time() - start_time, 2)
-                    print(t, self.number_of_clusters(), len(self._graph), old - calin)
-                    self.__save_img(fignum)
-                    fignum += 1
+            steps = 0
+            while steps < max_iterations:
+                for i, x in enumerate(data):
+                    igng(x)
+                    if i % save_step == 0:
+                        print('Working time = {} s, Clusters count = {}, Neurons = {}, CHI = {}'.
+                              format(round(time.time() - start_time, 2),
+                                     self.number_of_clusters(),
+                                     len(self._graph),
+                                     old - calin)
+                              )
+                        self.__save_img(fignum)
+                        fignum += 1
+                steps += 1
+
             self._d -= 0.1 * self._d
             old = calin
             calin = CHS()
 
         self._fignum = fignum
 
-    def test_node(self, node, train=False):
-        dist = self.__determine_closest_vertice_distance(node)
-        # Three-sigma rule.
-        dist_sub_dev = dist - 3 * self.__calculate_deviation_params()
-        if dist_sub_dev > 0:
-            #print('Anomaly', dist, self.__calculate_deviation_params(), dist_sub_dev)
-            return dist_sub_dev
+    def __train_on_data_item(self, data_item):
+        """IGNG training method"""
 
-        return 0
+        if data_item in self._data:
+            print('RET')
+            return
+
+        print('NRET')
+        np.append(self._data, data_item)
+
+        self._dev_params = None
+        CHS = self.__calinski_harabaz_score
+        igng = self.__igng
+        data = self._data
+
+        max_iterations = self._max_train_iters
+
+        old = 0
+        calin = CHS()
+        i_count = 0
+
+        # Strictly less.
+        while old - calin < 0:
+            print('Training with new normal node, step {0:d}...'.format(i_count))
+            i_count += 1
+            steps = 0
+
+            if i_count > 100:
+                print('BUG', old, calin)
+                break
+
+            while steps < max_iterations:
+                igng(data_item)
+                steps += 1
+            self._d -= 0.1 * self._d
+            old = calin
+            calin = CHS()
 
     def __calculate_deviation_params(self, skip_embryo=True):
         if self._dev_params is not None:
@@ -442,19 +519,29 @@ class IGNG():
         """."""
 
         if self._surface_graph is not None:
+            text = OrderedDict([
+                ('Image', fignum),
+                ('Time', '{} s'.format(round(time.time() - self._start_time, 2))),
+                ('Clusters count', self.number_of_clusters()),
+                ('Neurons', len(self._graph)),
+                ('Mature', len(self.__get_specific_nodes(1))),
+                ('Embryo', len(self.__get_specific_nodes(0))),
+                ('Connections', len(self._graph.edges)),
+                ('Data records', len(self._data))
+            ])
+
             draw_graph3d(self._surface_graph, fignum)
-        
-        if not fignum:
-            return
 
         graph = self._graph
-        #graph_pos = nx.get_node_attributes(graph, 'pos')
-        #nodes = sorted(self.get_specific_nodes(1))
-        #dots = np.array([graph_pos[v] for v in nodes], dtype='float32')
-        #edges = np.array([e for e in graph.edges(nodes) if e[0] in nodes and e[1] in nodes])
-        #draw_dots3d(dots, edges, fignum, clear=False, node_color=(1, 0, 0))
 
-        draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0))
+        if len(graph) > 0:
+            #graph_pos = nx.get_node_attributes(graph, 'pos')
+            #nodes = sorted(self.get_specific_nodes(1))
+            #dots = np.array([graph_pos[v] for v in nodes], dtype='float32')
+            #edges = np.array([e for e in graph.edges(nodes) if e[0] in nodes and e[1] in nodes])
+            #draw_dots3d(dots, edges, fignum, clear=False, node_color=(1, 0, 0))
+
+            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), text=text)
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
         mlab.close(fignum)
@@ -501,23 +588,17 @@ def main():
 
     gng = IGNG(data, surface_graph=G, output_images_dir=output_images_dir)
 
-    gng.train(max_iterations=1, save_step=50)
+    gng.train(max_iterations=10, save_step=50)
 
     print('Clusters count: {}'.format(gng.number_of_clusters()))
 
     #data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='normal')
-    data = read_ids_data('NSL_KDD/KDDTest-21.txt', activity_type='full')
+    data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='full')
+    #data = read_ids_data('NSL_KDD/KDDTest-21.txt', activity_type='normal')
     #data = read_ids_data('NSL_KDD/KDDTrain+.txt', activity_type='anomal')
     data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
 
-    a, o = 0, 0
-    for d in data:
-        if gng.test_node(d) != 0:
-            a += 1
-        else:
-            o += 1
-
-    print(a, o)
+    gng.detect_anomalies(data)
     convert_images_to_gif(output_images_dir, output_gif)
 
     return 0

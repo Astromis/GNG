@@ -1,4 +1,4 @@
-# !/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Initialize module utils."""
 
@@ -261,11 +261,12 @@ class IGNG():
             #print('Anomaly', dist, self.__calculate_deviation_params(), dist_sub_dev)
             return dist_sub_dev
 
-        if train:
+        if dist > self.__calculate_deviation_params() and train:
             self.__train_on_data_item(node)
+
         return 0
 
-    def detect_anomalies(self, data, threshold=10, train=False, save_step=100):
+    def detect_anomalies(self, data, threshold=10, train=True, save_step=100):
         anomalies_counter, anomaly_records_counter, normal_records_counter = 0, 0, 0
         anomaly_level = 0
 
@@ -302,7 +303,7 @@ class IGNG():
         self._max_train_iters = max_iterations
 
         fignum = self._fignum
-        self.__save_img(fignum)
+        self.__save_img(fignum, 0)
         CHS = self.__calinski_harabaz_score
         igng = self.__igng
         data = self._data
@@ -324,14 +325,15 @@ class IGNG():
                     igng(x)
                     if i % save_step == 0:
                         tm = time.time() - start_time
-                        print('Training time = {} s, Time per record = {} s, Clusters count = {}, Neurons = {}, CHI = {}'.
+                        print('Training time = {} s, Time per record = {} s, Training step = {}, Clusters count = {}, Neurons = {}, CHI = {}'.
                               format(round(tm, 2),
                                      tm * i_count * steps / (i if i else len(data)),
+                                     i_count,
                                      self.number_of_clusters(),
                                      len(self._graph),
                                      old - calin)
                               )
-                        self.__save_img(fignum)
+                        self.__save_img(fignum, i_count)
                         fignum += 1
                 steps += 1
 
@@ -344,11 +346,6 @@ class IGNG():
     def __train_on_data_item(self, data_item):
         """IGNG training method"""
 
-        if data_item in self._data:
-            print('RET')
-            return
-
-        print('NRET')
         np.append(self._data, data_item)
 
         self._dev_params = None
@@ -530,12 +527,13 @@ class IGNG():
             if not graph.neighbors(node):
                 graph.remove_node(node)
 
-    def __save_img(self, fignum):
+    def __save_img(self, fignum, training_step):
         """."""
 
         if self._surface_graph is not None:
             text = OrderedDict([
                 ('Image', fignum),
+                ('Training step', training_step),
                 ('Time', '{} s'.format(round(time.time() - self._start_time, 2))),
                 ('Clusters count', self.number_of_clusters()),
                 ('Neurons', len(self._graph)),
@@ -585,9 +583,9 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
     """Detector quality testing routine"""
 
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
-    frame = '-' * 50
-    #training_set = 'NSL_KDD/Small Training Set.csv'
-    training_set = 'NSL_KDD/KDDTest-21.txt'
+    frame = '-' * 70
+    training_set = 'NSL_KDD/Small Training Set.csv'
+    #training_set = 'NSL_KDD/KDDTest-21.txt'
     testing_set = 'NSL_KDD/KDDTrain+.txt'
 
     print('{}\n{}\n{}'.format(frame, 'Detector training...', frame))
@@ -606,7 +604,7 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
 
     for a_type in ['abnormal', 'full']:
         print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the training set...'.format(a_type), frame))
-        data = read_ids_data(training_set, activity_type='full')
+        data = read_ids_data(training_set, activity_type=a_type)
         data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
         gng.detect_anomalies(data)
 
@@ -614,7 +612,7 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
 
     for a_type in dt.keys():
         print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set...'.format(a_type), frame))
-        d = read_ids_data(testing_set, activity_type='normal')
+        d = read_ids_data(testing_set, activity_type=a_type)
         dt[a_type] = d = preprocessing.scale(preprocessing.normalize(np.array(d, dtype='float32'), copy=False), with_mean=False, copy=False)
         gng.detect_anomalies(d)
 

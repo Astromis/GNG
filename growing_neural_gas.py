@@ -316,7 +316,7 @@ class IGNG():
         # Three-sigma rule.
         dist_sub_dev = dist - 3 * self.__calculate_deviation_params()
         if dist_sub_dev > 0:
-            print('Anomaly', dist, self.__calculate_deviation_params())
+            print('Anomaly', dist, self.__calculate_deviation_params(), dist_sub_dev)
             return dist_sub_dev
 
         return 0
@@ -373,16 +373,14 @@ class IGNG():
         pos = nx.get_node_attributes(self._graph, 'pos')
         nodes = self._graph.nodes
 
-        distance = None
-
+        distance = sys.maxint
         for node, position in pos.items():
             if skip_embryo and nodes[node]['n_type'] == 0:
                 # Skip embryo neurons.
                 continue
             dist = euclidean(curnode, position)
-            if distance is None or dist < distance:
+            if dist < distance:
                 distance = dist
-
         return distance
 
     def __determine_2closest_vertices(self, curnode):
@@ -415,7 +413,8 @@ class IGNG():
         nodes = graph.nodes
         d = self._d
 
-        if winner1 is None or euclidean(winner1[1], cur_node) >= d:
+        # Second list element is a distance.
+        if winner1 is None or winner1[1] >= d:
             # 0 - is an embryo type.
             graph.add_node(self._count, pos=cur_node, error=0, n_type=0, age=0)
             winner_node1 = self._count
@@ -424,7 +423,8 @@ class IGNG():
         else:
             winner_node1 = winner1[0]
 
-        if winner2 is None or euclidean(winner2[1], cur_node) >= d:
+        # Second list element is a distance.
+        if winner2 is None or winner2[1] >= d:
             # 0 - is an embryo type.
             graph.add_node(self._count, pos=cur_node, error=0, n_type=0, age=0)
             winner_node2 = self._count
@@ -464,7 +464,6 @@ class IGNG():
         age_of_edges = nx.get_edge_attributes(graph, 'age')
         for edge, age in iteritems(age_of_edges):
             if age >= max_age:
-                #!!!
                 graph.remove_edge(edge[0], edge[1])
 
         # If it causes isolated vertix, remove that vertex as well.
@@ -536,7 +535,7 @@ def main():
 
     gng = IGNG(data, surface_graph=G, output_images_dir=output_images_dir)
 
-    gng.train(max_iterations=10, save_step=50)
+    gng.train(max_iterations=1, save_step=50)
 
     print('Clusters count: {}'.format(gng.number_of_clusters()))
 

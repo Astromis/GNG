@@ -18,4 +18,4 @@ Usage:
 
   `python growing_neural_gas.py`
 
-![][output.gif]
+![](output.gif)

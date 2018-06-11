@@ -29,40 +29,6 @@ def sh(s):
     return sum
 
 
-def read_test_file():
-    """Read the file and return the indices as list of lists."""
-    filename = 'test_data.txt'
-    with open(filename) as file:
-        array2d = [[int(digit) for digit in line.split()] for line in file]
-
-    return array2d
-
-
-def create_test_data_graph(array2d):
-    """Create the graph and returns the networkx version of it 'G'."""
-
-    row, column = len(array2d), len(array2d[0])
-    count = 0
-
-    G = nx.Graph()
-
-    for j in xrange(column):
-        for i in xrange(row):
-            if array2d[row - 1 - i][j] == 0:
-                G.add_node(count, pos=(j, i, np.random.randint(-1, 1)))
-                count += 1
-
-    """
-    for index in pos.keys():
-        for index2 in pos.keys():
-            if pos[index][0] == pos[index2][0] and pos[index][1] == pos[index2][1] - 1:
-                G.add_edge(index, index2, weight=1)
-            if pos[index][1] == pos[index2][1] and pos[index][0] == pos[index2][0] - 1:
-                G.add_edge(index, index2, weight=1)
-    """
-    return G
-
-
 def create_data_graph(dots):
     """Create the graph and returns the networkx version of it 'G'."""
 
@@ -311,12 +277,12 @@ class IGNG():
 
         self._fignum = fignum
 
-    def test_node(self, node):
+    def test_node(self, node, train=False):
         dist = self.__determine_closest_vertice_distance(node)
         # Three-sigma rule.
         dist_sub_dev = dist - 3 * self.__calculate_deviation_params()
         if dist_sub_dev > 0:
-            print('Anomaly', dist, self.__calculate_deviation_params(), dist_sub_dev)
+            #print('Anomaly', dist, self.__calculate_deviation_params(), dist_sub_dev)
             return dist_sub_dev
 
         return 0
@@ -539,8 +505,9 @@ def main():
 
     print('Clusters count: {}'.format(gng.number_of_clusters()))
 
-    data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='anomal')
-    #data = read_ids_data('NSL_KDD/KDDTest-21.txt', activity_type='anomal')
+    #data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='normal')
+    data = read_ids_data('NSL_KDD/KDDTest-21.txt', activity_type='full')
+    #data = read_ids_data('NSL_KDD/KDDTrain+.txt', activity_type='anomal')
     data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
 
     a, o = 0, 0

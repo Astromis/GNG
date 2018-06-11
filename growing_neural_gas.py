@@ -216,9 +216,8 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
 class IGNG():
     """Incremental Growing Neural Gas multidimensional implementation"""
 
-    def __init__(self, data, surface_graph=None, eps_b=0.01, eps_n=0.002, max_age=50,
-                 lambda_=100, a_mature=1, max_nodes=100,
-                 output_images_dir='images'):
+    def __init__(self, data, surface_graph=None, eps_b=0.01, eps_n=0.002, max_age=10,
+                 lambda_=100, a_mature=1, output_images_dir='images'):
         """."""
 
         # Deviation parameters.
@@ -230,7 +229,6 @@ class IGNG():
         self._max_age = max_age
         self._lambda = lambda_
         self._a_mature = a_mature
-        self._max_nodes = max_nodes
         self._num_of_input_signals = 0
         self._surface_graph = surface_graph
         self._fignum = 0
@@ -266,7 +264,7 @@ class IGNG():
 
         return 0
 
-    def detect_anomalies(self, data, threshold=10, train=True, save_step=100):
+    def detect_anomalies(self, data, threshold=10, train=False, save_step=100):
         anomalies_counter, anomaly_records_counter, normal_records_counter = 0, 0, 0
         anomaly_level = 0
 
@@ -523,7 +521,10 @@ class IGNG():
 
         # If it causes isolated vertix, remove that vertex as well.
         #graph.remove_nodes_from(nx.isolates(graph))
-        for node in nodes:
+        for node, v in nodes.items():
+            if v['n_type'] == 0:
+                # Skip embryo neurons.
+                continue
             if not graph.neighbors(node):
                 graph.remove_node(node)
 
@@ -584,8 +585,8 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
 
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     frame = '-' * 70
-    training_set = 'NSL_KDD/Small Training Set.csv'
-    #training_set = 'NSL_KDD/KDDTest-21.txt'
+    #training_set = 'NSL_KDD/Small Training Set.csv'
+    training_set = 'NSL_KDD/KDDTest-21.txt'
     testing_set = 'NSL_KDD/KDDTrain+.txt'
 
     print('{}\n{}\n{}'.format(frame, 'Detector training...', frame))
@@ -611,10 +612,14 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
     dt = {'normal': None, 'abnormal': None, 'full': None}
 
     for a_type in dt.keys():
-        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set...'.format(a_type), frame))
+        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set without adaptive learning...'.format(a_type), frame))
         d = read_ids_data(testing_set, activity_type=a_type)
         dt[a_type] = d = preprocessing.scale(preprocessing.normalize(np.array(d, dtype='float32'), copy=False), with_mean=False, copy=False)
         gng.detect_anomalies(d)
+
+    for a_type in dt.keys():
+        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
+        gng.detect_anomalies(dt[a_type], train=True)
 
 
 def main():

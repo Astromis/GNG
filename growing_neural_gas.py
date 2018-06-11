@@ -4,6 +4,7 @@
 
 from math import sqrt
 from mayavi import mlab
+import gc
 import operator
 import imageio
 from collections import OrderedDict
@@ -74,24 +75,28 @@ def shrink_to_3d(data):
 
 
 def draw_dots3d(dots, edges, fignum, clear=True,
-                 size=(1024, 768), graph_colormap='viridis',
-                 bgcolor = (1, 1, 1),
-                 node_color=(0.3, 0.65, 0.3), node_size=0.01,
-                 edge_color=(0.3, 0.3, 0.9), edge_size=0.003,
-                 text_size=0.14, text_color=(0, 0, 0), text_coords=[0.84, 0.75], text={},
-                 title_size=0.3,
-                 angle=get_ra()):
+                title = 'Incremental Growing Neuron Gas for the network anomalies detection',
+                size=(1024, 768), graph_colormap='viridis',
+                bgcolor = (1, 1, 1),
+                node_color=(0.3, 0.65, 0.3), node_size=0.01,
+                edge_color=(0.3, 0.3, 0.9), edge_size=0.003,
+                text_size=0.14, text_color=(0, 0, 0), text_coords=[0.84, 0.75], text={},
+                title_size=0.3,
+                angle=get_ra()):
 
     # https://stackoverflow.com/questions/17751552/drawing-multiplex-graphs-with-networkx
 
     # numpy array of x, y, z positions in sorted node order
     xyz = shrink_to_3d(dots)
 
-    if mlab.options.offscreen:
+    if fignum == 0:
         mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
-    else:
-        if fignum == 0:
-            mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
+
+    # Mayavi is buggy, and following code causes sockets leak.
+    #if mlab.options.offscreen:
+    #    mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
+    #elif fignum == 0:
+    #    mlab.figure(fignum, bgcolor=bgcolor, fgcolor=text_color, size=size)
 
     if clear:
         mlab.clf()
@@ -110,7 +115,7 @@ def draw_dots3d(dots, edges, fignum, clear=True,
     mlab.text(text_coords[0], text_coords[1], '\n'.join(['{} = {}'.format(n, v) for n, v in text.items()]), width=text_size)
 
     if clear:
-        mlab.title('Growing Neuron Gas for the network anomalies detection', height=0.95)
+        mlab.title(title, height=0.95)
         mlab.roll(next(angle))
         mlab.orientation_axes(pts)
         mlab.outline(pts)
@@ -181,12 +186,12 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
 
     if activity_type == 'normal':
         data_type = lambda t: t == 'normal'
-    elif activity_type == 'anomal':
+    elif activity_type == 'abnormal':
         data_type = lambda t: t != 'normal'
     elif activity_type == 'full':
         data_type = lambda t: True
     else:
-        raise ValueError('`activity_type` must be "normal", "anomal" or "full"')
+        raise ValueError('`activity_type` must be "normal", "abnormal" or "full"')
 
     print('Reading {} activity from the file "{}" [generated host data {} included]...'.
           format(activity_type, data_file, 'was' if with_host else 'was not'))
@@ -200,7 +205,7 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
                 net_params = tuple(f_list[n](i) for n, i in enumerate(d[:-2]) if n_list[n] in selected_parameters)
 
                 if with_host:
-                    host_params = generate_host_activity(activity_type != 'anomal')
+                    host_params = generate_host_activity(activity_type != 'abnormal')
                     result.append(net_params + host_params)
                 else:
                     result.append(net_params)
@@ -248,7 +253,7 @@ class IGNG():
     def number_of_clusters(self):
         return nx.number_connected_components(self._graph)
 
-    def test_node(self, node, train=True):
+    def test_node(self, node, train=False):
         dist = self.__determine_closest_vertice_distance(node)
         # Three-sigma rule.
         dist_sub_dev = dist - 3 * self.__calculate_deviation_params()
@@ -260,25 +265,33 @@ class IGNG():
             self.__train_on_data_item(node)
         return 0
 
-    def detect_anomalies(self, data, threshold=10, train=False):
+    def detect_anomalies(self, data, threshold=10, train=False, save_step=100):
         anomalies_counter, anomaly_records_counter, normal_records_counter = 0, 0, 0
         anomaly_level = 0
 
-        for d in data:
-            risk_level = self.test_node(d)
+        start_time = self._start_time = time.time()
+
+        for i, d in enumerate(data):
+            risk_level = self.test_node(d, train)
             if risk_level != 0:
                 anomaly_records_counter += 1
                 anomaly_level += risk_level
                 if anomaly_level > threshold:
                     anomalies_counter += 1
-                    print('Anomaly was detected [count = {}]!'.format(anomalies_counter))
+                    #print('Anomaly was detected [count = {}]!'.format(anomalies_counter))
                     anomaly_level = 0
             else:
                 normal_records_counter += 1
 
-        print('{} [anomaly records = {}, normal records = {}]'.format('Anomalies were detected (count = {})'.format(anomalies_counter) if anomalies_counter
-                                                                     else 'Anomalies were\'t detected',
-                                                                     anomaly_records_counter, normal_records_counter))
+            if i % save_step == 0:
+                tm = time.time() - start_time
+                print('Abnormal records = {}, Normal records = {}, Detection time = {} s, Time per record = {} s'.
+                      format(anomaly_records_counter, normal_records_counter, round(tm, 2), tm / i if i else 0))
+
+        tm = time.time() - start_time
+        print('{} [abnormal records = {}, normal records = {}, detection time = {} s, time per record = {} s]'.
+              format('Anomalies were detected (count = {})'.format(anomalies_counter) if anomalies_counter else 'Anomalies were\'t detected',
+                     anomaly_records_counter, normal_records_counter, round(tm, 2), tm / len(data)))
 
         return anomalies_counter > 0
 
@@ -305,13 +318,15 @@ class IGNG():
         while old - calin <= 0:
             print('Iteration {0:d}...'.format(i_count))
             i_count += 1
-            steps = 0
-            while steps < max_iterations:
+            steps = 1
+            while steps <= max_iterations:
                 for i, x in enumerate(data):
                     igng(x)
                     if i % save_step == 0:
-                        print('Working time = {} s, Clusters count = {}, Neurons = {}, CHI = {}'.
-                              format(round(time.time() - start_time, 2),
+                        tm = time.time() - start_time
+                        print('Training time = {} s, Time per record = {} s, Clusters count = {}, Neurons = {}, CHI = {}'.
+                              format(round(tm, 2),
+                                     tm * i_count * steps / (i if i else len(data)),
                                      self.number_of_clusters(),
                                      len(self._graph),
                                      old - calin)
@@ -323,7 +338,7 @@ class IGNG():
             self._d -= 0.1 * self._d
             old = calin
             calin = CHS()
-
+        print('Training complete, clusters count = {}'.format(self.number_of_clusters()))
         self._fignum = fignum
 
     def __train_on_data_item(self, data_item):
@@ -448,7 +463,7 @@ class IGNG():
         return [n for n, p in nx.get_node_attributes(self._graph, 'n_type').items() if p == n_type]
 
     def __igng(self, cur_node):
-        """."""
+        """Main IGNG training subroutine"""
 
         # find nearest unit and second nearest unit
         winner1, winner2 = self.__determine_2closest_vertices(cur_node)
@@ -524,8 +539,8 @@ class IGNG():
                 ('Time', '{} s'.format(round(time.time() - self._start_time, 2))),
                 ('Clusters count', self.number_of_clusters()),
                 ('Neurons', len(self._graph)),
-                ('Mature', len(self.__get_specific_nodes(1))),
-                ('Embryo', len(self.__get_specific_nodes(0))),
+                ('    Mature', len(self.__get_specific_nodes(1))),
+                ('    Embryo', len(self.__get_specific_nodes(0))),
                 ('Connections', len(self._graph.edges)),
                 ('Data records', len(self._data))
             ])
@@ -544,11 +559,11 @@ class IGNG():
             draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), text=text)
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
-        mlab.close(fignum)
+        #mlab.close(fignum)
 
 
 def sort_nicely(limages):
-    """."""
+    """Numeric string sort"""
     def convert(text): return int(text) if text.isdigit() else text
 
     def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
@@ -566,40 +581,52 @@ def convert_images_to_gif(output_images_dir, output_gif):
     imageio.mimsave(output_gif, images)
 
 
-def main():
-    """."""
-    mlab.options.offscreen = True
-    output_images_dir = 'images'
-    output_gif = 'output.gif'
+def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'output.gif'):
+    """Detector quality testing routine"""
 
-    #G = create_test_data_graph(read_test_file())
-    #data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='normal')
-    #data = read_ids_data('NSL_KDD/KDDTest-21.txt', activity_type='anomal')
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
-    #data = read_ids_data('NSL_KDD/KDDTrain+.txt')
-    data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='normal')
+    frame = '-' * 50
+    #training_set = 'NSL_KDD/Small Training Set.csv'
+    training_set = 'NSL_KDD/KDDTest-21.txt'
+    testing_set = 'NSL_KDD/KDDTrain+.txt'
+
+    print('{}\n{}\n{}'.format(frame, 'Detector training...', frame))
+    data = read_ids_data(training_set, activity_type='normal')
     data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
     G = create_data_graph(data)
 
-    #G = create_data_graph(read_ids_data('NSL_KDD/20 Percent Training Set.csv'))
-    #data = []
-    #for key, value in iteritems(pos):
-    #    data.append(value)
-
     gng = IGNG(data, surface_graph=G, output_images_dir=output_images_dir)
-
     gng.train(max_iterations=10, save_step=50)
 
-    print('Clusters count: {}'.format(gng.number_of_clusters()))
-
-    #data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='normal')
-    data = read_ids_data('NSL_KDD/Small Training Set.csv', activity_type='full')
-    #data = read_ids_data('NSL_KDD/KDDTest-21.txt', activity_type='normal')
-    #data = read_ids_data('NSL_KDD/KDDTrain+.txt', activity_type='anomal')
-    data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
-
-    gng.detect_anomalies(data)
+    print('Saving GIF file...')
     convert_images_to_gif(output_images_dir, output_gif)
+
+    print('{}\n{}\n{}'.format(frame, 'Apllying detector to the normal activity using the training set...', frame))
+    gng.detect_anomalies(data)
+
+    for a_type in ['abnormal', 'full']:
+        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the training set...'.format(a_type), frame))
+        data = read_ids_data(training_set, activity_type='full')
+        data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
+        gng.detect_anomalies(data)
+
+    dt = {'normal': None, 'abnormal': None, 'full': None}
+
+    for a_type in dt.keys():
+        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set...'.format(a_type), frame))
+        d = read_ids_data(testing_set, activity_type='normal')
+        dt[a_type] = d = preprocessing.scale(preprocessing.normalize(np.array(d, dtype='float32'), copy=False), with_mean=False, copy=False)
+        gng.detect_anomalies(d)
+
+
+def main():
+    """Entry point"""
+
+    start_time = time.time()
+
+    mlab.options.offscreen = True
+    test_detector(False)
+    print('Full working time = {}'.format(round(time.time() - start_time, 2)))
 
     return 0
 

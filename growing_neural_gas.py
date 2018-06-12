@@ -4,7 +4,6 @@
 
 from math import sqrt
 from mayavi import mlab
-import gc
 import operator
 import imageio
 from collections import OrderedDict
@@ -71,13 +70,13 @@ def shrink_to_3d(data):
 
             result.append(r)
 
-    return preprocessing.normalize(result)
+    return preprocessing.normalize(result, axis=0, norm='max')
 
 
 def draw_dots3d(dots, edges, fignum, clear=True,
                 title = 'Incremental Growing Neuron Gas for the network anomalies detection',
                 size=(1024, 768), graph_colormap='viridis',
-                bgcolor = (1, 1, 1),
+                bgcolor=(1, 1, 1),
                 node_color=(0.3, 0.65, 0.3), node_size=0.01,
                 edge_color=(0.3, 0.3, 0.9), edge_size=0.003,
                 text_size=0.14, text_color=(0, 0, 0), text_coords=[0.84, 0.75], text={},
@@ -137,7 +136,7 @@ def draw_dots3d(dots, edges, fignum, clear=True,
 def draw_graph3d(graph, fignum, *args, **kwargs):
     graph_pos = nx.get_node_attributes(graph, 'pos')
     edges = np.array([e for e in graph.edges()])
-    dots = np.array([graph_pos[v] for v in sorted(graph)], dtype='float32')
+    dots = np.array([graph_pos[v] for v in sorted(graph)], dtype='float64')
 
     draw_dots3d(dots, edges, fignum, *args, **kwargs)
 
@@ -167,7 +166,8 @@ def generate_host_activity(is_normal):
 
 
 def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field Names.csv', with_host=False):
-    selected_parameters = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent']
+    selected_parameters = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent', 'serror_rate',
+                           'diff_srv_rate', 'srv_diff_host_rate', 'dst_host_srv_count', 'count']
 
     # "Label" - "converter function" dictionary.
     label_dict = OrderedDict()
@@ -202,7 +202,7 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
         for d in data:
             if data_type(d[-2]):
                 # Skip last two fields and add only specified fields.
-                net_params = tuple(f_list[n](i) for n, i in enumerate(d[:-2]) if n_list[n] in selected_parameters)
+                net_params = tuple(f_list[n](i) for n, i in enumerate(d[:-2])) # if n_list[n] in selected_parameters)
 
                 if with_host:
                     host_params = generate_host_activity(activity_type != 'abnormal')
@@ -217,7 +217,7 @@ class IGNG():
     """Incremental Growing Neural Gas multidimensional implementation"""
 
     def __init__(self, data, surface_graph=None, eps_b=0.01, eps_n=0.002, max_age=10,
-                 lambda_=100, a_mature=1, output_images_dir='images'):
+                 a_mature=1, output_images_dir='images'):
         """."""
 
         # Deviation parameters.
@@ -227,7 +227,6 @@ class IGNG():
         self._eps_b = eps_b
         self._eps_n = eps_n
         self._max_age = max_age
-        self._lambda = lambda_
         self._a_mature = a_mature
         self._num_of_input_signals = 0
         self._surface_graph = surface_graph
@@ -251,20 +250,7 @@ class IGNG():
     def number_of_clusters(self):
         return nx.number_connected_components(self._graph)
 
-    def test_node(self, node, train=False):
-        dist = self.__determine_closest_vertice_distance(node)
-        # Three-sigma rule.
-        dist_sub_dev = dist - 3 * self.__calculate_deviation_params()
-        if dist_sub_dev > 0:
-            #print('Anomaly', dist, self.__calculate_deviation_params(), dist_sub_dev)
-            return dist_sub_dev
-
-        if dist > self.__calculate_deviation_params() and train:
-            self.__train_on_data_item(node)
-
-        return 0
-
-    def detect_anomalies(self, data, threshold=10, train=False, save_step=100):
+    def detect_anomalies(self, data, threshold=5, train=False, save_step=100):
         anomalies_counter, anomaly_records_counter, normal_records_counter = 0, 0, 0
         anomaly_level = 0
 
@@ -288,11 +274,23 @@ class IGNG():
                       format(anomaly_records_counter, normal_records_counter, round(tm, 2), tm / i if i else 0))
 
         tm = time.time() - start_time
+
         print('{} [abnormal records = {}, normal records = {}, detection time = {} s, time per record = {} s]'.
-              format('Anomalies were detected (count = {})'.format(anomalies_counter) if anomalies_counter else 'Anomalies were\'t detected',
+              format('Anomalies were detected (count = {})'.format(anomalies_counter) if anomalies_counter else 'Anomalies weren\'t detected',
                      anomaly_records_counter, normal_records_counter, round(tm, 2), tm / len(data)))
 
         return anomalies_counter > 0
+
+    def test_node(self, node, train=False):
+        dist = abs(self.__determine_closest_vertice_distance(node))
+        dist_sub_dev = dist - self.__calculate_deviation_params()
+        if dist_sub_dev > 0:
+            return dist_sub_dev
+
+        if dist > self.__calculate_deviation_params() and train:
+            self.__train_on_data_item(node)
+
+        return 0
 
     def train(self, max_iterations=100, save_step=0):
         """IGNG training method"""
@@ -340,6 +338,12 @@ class IGNG():
             calin = CHS()
         print('Training complete, clusters count = {}'.format(self.number_of_clusters()))
         self._fignum = fignum
+
+    def __fast_train_on_data_item(self, data_item):
+        steps = 0
+        while steps < max_iterations:
+            igng(data_item)
+            steps += 1
 
     def __train_on_data_item(self, data_item):
         """IGNG training method"""
@@ -404,7 +408,7 @@ class IGNG():
         n = len(self._data)
 
         # Mean of the all data.
-        mean = np.mean(self._data)
+        mean = np.mean(self._data, axis=1)
 
         pos = nx.get_node_attributes(self._graph, 'pos')
 
@@ -412,6 +416,7 @@ class IGNG():
             if skip_embryo and nodes[node]['n_type'] == 0:
                 # Skip embryo neurons.
                 continue
+            
             mean_k = np.mean(k)
             extra_disp += len(k) * np.sum((mean_k - mean) ** 2)
             intra_disp += np.sum((k - mean_k) ** 2)
@@ -551,7 +556,7 @@ class IGNG():
         if len(graph) > 0:
             #graph_pos = nx.get_node_attributes(graph, 'pos')
             #nodes = sorted(self.get_specific_nodes(1))
-            #dots = np.array([graph_pos[v] for v in nodes], dtype='float32')
+            #dots = np.array([graph_pos[v] for v in nodes], dtype='float64')
             #edges = np.array([e for e in graph.edges(nodes) if e[0] in nodes and e[1] in nodes])
             #draw_dots3d(dots, edges, fignum, clear=False, node_color=(1, 0, 0))
 
@@ -585,17 +590,18 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
 
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     frame = '-' * 70
-    #training_set = 'NSL_KDD/Small Training Set.csv'
-    training_set = 'NSL_KDD/KDDTest-21.txt'
-    testing_set = 'NSL_KDD/KDDTrain+.txt'
+    training_set = 'NSL_KDD/Small Training Set.csv'
+    #training_set = 'NSL_KDD/KDDTest-21.txt'
+    testing_set = 'NSL_KDD/KDDTest-21.txt'
+    #testing_set = 'NSL_KDD/KDDTrain+.txt'
 
     print('{}\n{}\n{}'.format(frame, 'Detector training...', frame))
     data = read_ids_data(training_set, activity_type='normal')
-    data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
+    data = preprocessing.normalize(np.array(data, dtype='float64'), axis=0, norm='l2', copy=False)
     G = create_data_graph(data)
 
     gng = IGNG(data, surface_graph=G, output_images_dir=output_images_dir)
-    gng.train(max_iterations=10, save_step=50)
+    gng.train(max_iterations=15, save_step=50)
 
     print('Saving GIF file...')
     convert_images_to_gif(output_images_dir, output_gif)
@@ -605,21 +611,21 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
 
     for a_type in ['abnormal', 'full']:
         print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the training set...'.format(a_type), frame))
-        data = read_ids_data(training_set, activity_type=a_type)
-        data = preprocessing.scale(preprocessing.normalize(np.array(data, dtype='float32'), copy=False), with_mean=False, copy=False)
-        gng.detect_anomalies(data)
+        d_data = read_ids_data(training_set, activity_type=a_type)
+        d_data = preprocessing.normalize(np.array(d_data, dtype='float64'), axis=0, norm='l2', copy=False)
+        gng.detect_anomalies(d_data)
 
-    dt = {'normal': None, 'abnormal': None, 'full': None}
+    dt = OrderedDict([('normal', None), ('abnormal', None), ('full', None)])
 
     for a_type in dt.keys():
         print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set without adaptive learning...'.format(a_type), frame))
         d = read_ids_data(testing_set, activity_type=a_type)
-        dt[a_type] = d = preprocessing.scale(preprocessing.normalize(np.array(d, dtype='float32'), copy=False), with_mean=False, copy=False)
-        gng.detect_anomalies(d)
+        dt[a_type] = d = preprocessing.normalize(np.array(d, dtype='float64'), axis=0, norm='l2', copy=False)
+        gng.detect_anomalies(d, save_step=1000)
 
-    for a_type in dt.keys():
+    for a_type in ['full']:
         print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
-        gng.detect_anomalies(dt[a_type], train=True)
+        gng.detect_anomalies(dt[a_type], train=True, save_step=1000)
 
 
 def main():

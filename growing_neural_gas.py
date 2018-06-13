@@ -205,7 +205,7 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
         for d in data:
             if data_type(d[-2]):
                 # Skip last two fields and add only specified fields.
-                net_params = tuple(f_list[n](i) for n, i in enumerate(d[:-2])) # if n_list[n] in selected_parameters)
+                net_params = tuple(f_list[n](i) for n, i in enumerate(d[:-2]) if n_list[n] in selected_parameters)
 
                 if with_host:
                     host_params = generate_host_activity(activity_type != 'abnormal')
@@ -609,8 +609,8 @@ class IGNG(NeuralGas):
 class GNG(NeuralGas):
     """Growing Neural Gas multidimensional implementation"""
 
-    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=15,
-                 lambda_=100, alpha=0.5, d=0.005, max_nodes=1000,
+    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0006, max_age=10,
+                 lambda_=20, alpha=0.5, d=0.005, max_nodes=1000,
                  output_images_dir='images'):
         """."""
         NeuralGas.__init__(self, data, surface_graph, output_images_dir)
@@ -898,10 +898,10 @@ def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', ou
 
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     frame = '-' * 70
-    #training_set = 'NSL_KDD/Small Training Set.csv'
-    training_set = 'NSL_KDD/KDDTest-21.txt'
-    #testing_set = 'NSL_KDD/KDDTest-21.txt'
-    testing_set = 'NSL_KDD/KDDTrain+.txt'
+    training_set = 'NSL_KDD/Small Training Set.csv'
+    #training_set = 'NSL_KDD/KDDTest-21.txt'
+    testing_set = 'NSL_KDD/KDDTest-21.txt'
+    #testing_set = 'NSL_KDD/KDDTrain+.txt'
 
     print('{}\n{}\n{}'.format(frame, 'Detector training...', frame))
     data = read_ids_data(training_set, activity_type='normal')
@@ -942,11 +942,11 @@ def main():
     start_time = time.time()
 
     mlab.options.offscreen = True
-    test_detector(use_hosts_data=False, max_iters=10000, alg=GNG, output_gif='gng_wohosts.gif')
+    test_detector(use_hosts_data=False, max_iters=5000, alg=GNG, output_gif='gng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
-    test_detector(use_hosts_data=True, max_iters=10000, alg=GNG, output_gif='gng_whosts.gif')
+    test_detector(use_hosts_data=True, max_iters=5000, alg=GNG, output_gif='gng_whosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=True, max_iters=100, alg=IGNG, output_gif='igng_whosts.gif')
     print('Full working time = {}'.format(round(time.time() - start_time, 2)))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Initialize module utils."""
 
+from abc import ABCMeta, abstractmethod
 from math import sqrt
 from mayavi import mlab
 import operator
@@ -74,7 +74,7 @@ def shrink_to_3d(data):
 
 
 def draw_dots3d(dots, edges, fignum, clear=True,
-                title = 'Incremental Growing Neuron Gas for the network anomalies detection',
+                title = 'Incremental Growing Neural Gas for the network anomalies detection',
                 size=(1024, 768), graph_colormap='viridis',
                 bgcolor=(1, 1, 1),
                 node_color=(0.3, 0.65, 0.3), node_size=0.01,
@@ -152,6 +152,8 @@ def generate_host_activity(is_normal):
     iops = (10, 50)
     # Memory consumption in percent.
     mem_cons = (30, 60)
+    # Memory consumption in Mb/s.
+    netw_act = (10, 50)
 
     cur_up_level = 0
 
@@ -161,8 +163,9 @@ def generate_host_activity(is_normal):
     cpu_load = np.random.randint(cur_up_level + cpu_load[0], cur_up_level + cpu_load[1])
     iops = np.random.randint(cur_up_level + iops[0], cur_up_level + iops[1])
     mem_cons = np.random.randint(cur_up_level + mem_cons[0], cur_up_level + mem_cons[1])
+    netw_act = np.random.randint(cur_up_level + netw_act[0], cur_up_level + netw_act[1])
 
-    return cpu_load, iops, mem_cons
+    return cpu_load, iops, mem_cons, netw_act
 
 
 def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field Names.csv', with_host=False):
@@ -213,39 +216,30 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
     return result
 
 
-class IGNG():
-    """Incremental Growing Neural Gas multidimensional implementation"""
+class NeuralGas():
+    __metaclass__ = ABCMeta
 
-    def __init__(self, data, surface_graph=None, eps_b=0.01, eps_n=0.002, max_age=10,
-                 a_mature=1, output_images_dir='images'):
-        """."""
-
-        # Deviation parameters.
-        self._dev_params = None
+    def __init__(self, data, surface_graph=None, output_images_dir='images'):
         self._graph = nx.Graph()
         self._data = data
-        self._eps_b = eps_b
-        self._eps_n = eps_n
-        self._max_age = max_age
-        self._a_mature = a_mature
-        self._num_of_input_signals = 0
         self._surface_graph = surface_graph
-        self._fignum = 0
-        self._count = 0
-        self._max_train_iters = 0
-        self._start_time = time.time()
-
-        # Initial value is a standard deviation of the data.
-        self._d = np.std(data)
-
+        # Deviation parameters.
+        self._dev_params = None
         self._output_images_dir = output_images_dir
+        # Nodes count.
+        self._count = 0
 
         if os.path.isdir(output_images_dir):
             shutil.rmtree('{}'.format(output_images_dir))
 
+        print("Ouput images will be saved in: {0}".format(output_images_dir))
         os.makedirs(output_images_dir)
 
-        print("Ouput images will be saved in: {0}".format(output_images_dir))
+        self._start_time = time.time()
+
+    @abstractmethod
+    def train(self, max_iterations=100, save_step=0):
+        raise NotImplementedError()
 
     def number_of_clusters(self):
         return nx.number_connected_components(self._graph)
@@ -282,15 +276,73 @@ class IGNG():
         return anomalies_counter > 0
 
     def test_node(self, node, train=False):
-        dist = abs(self.__determine_closest_vertice_distance(node))
-        dist_sub_dev = dist - self.__calculate_deviation_params()
+        dist = abs(self._determine_closest_vertice_distance(node))
+        dist_sub_dev = dist - self._calculate_deviation_params()
         if dist_sub_dev > 0:
             return dist_sub_dev
 
-        if dist > self.__calculate_deviation_params() and train:
-            self.__train_on_data_item(node)
+        if dist > self._calculate_deviation_params() and train:
+            self._train_on_data_item(node)
 
         return 0
+
+    @abstractmethod
+    def _calculate_deviation_params(self):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def _train_on_data_item(self, data_item):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def _save_img(self, fignum, training_step):
+        """."""
+        raise NotImplementedError()
+
+    def _determine_closest_vertice_distance(self, curnode):
+        """."""
+
+        pos = nx.get_node_attributes(self._graph, 'pos')
+        distances = np.linalg.norm(pos.values() - curnode, ord=2, axis=1)
+        i0 = np.argsort(distances)[0]
+        return distances[0]
+
+    def _determine_2closest_vertices(self, curnode):
+        """Where this curnode is actually the x,y index of the data we want to analyze."""
+
+        pos = nx.get_node_attributes(self._graph, 'pos')
+
+        kv = zip(*pos.items())
+        # Calculate Euclidean distance (2-norm of difference vectors) and get first two indexes of the sorted array.
+        # Or a Euclidean-closest nodes index.
+        distances = np.linalg.norm(kv[1] - curnode, ord=2, axis=1)
+        i0, i1 = np.argsort(distances)[0:2]
+
+        winner1 = tuple((kv[0][i0], distances[i0]))
+        winner2 = tuple((kv[0][i1], distances[i1]))
+
+        return winner1, winner2
+
+
+class IGNG(NeuralGas):
+    """Incremental Growing Neural Gas multidimensional implementation"""
+
+    def __init__(self, data, surface_graph=None, eps_b=0.01, eps_n=0.002, max_age=10,
+                 a_mature=1, output_images_dir='images'):
+        """."""
+
+        NeuralGas.__init__(self, data, surface_graph, output_images_dir)
+
+        self._eps_b = eps_b
+        self._eps_n = eps_n
+        self._max_age = max_age
+        self._a_mature = a_mature
+        self._num_of_input_signals = 0
+        self._fignum = 0
+        self._max_train_iters = 0
+
+        # Initial value is a standard deviation of the data.
+        self._d = np.std(data)
 
     def train(self, max_iterations=100, save_step=0):
         """IGNG training method"""
@@ -299,7 +351,7 @@ class IGNG():
         self._max_train_iters = max_iterations
 
         fignum = self._fignum
-        self.__save_img(fignum, 0)
+        self._save_img(fignum, 0)
         CHS = self.__calinski_harabaz_score
         igng = self.__igng
         data = self._data
@@ -329,7 +381,7 @@ class IGNG():
                                      len(self._graph),
                                      old - calin)
                               )
-                        self.__save_img(fignum, i_count)
+                        self._save_img(fignum, i_count)
                         fignum += 1
                 steps += 1
 
@@ -345,7 +397,7 @@ class IGNG():
             igng(data_item)
             steps += 1
 
-    def __train_on_data_item(self, data_item):
+    def _train_on_data_item(self, data_item):
         """IGNG training method"""
 
         np.append(self._data, data_item)
@@ -378,13 +430,13 @@ class IGNG():
             old = calin
             calin = CHS()
 
-    def __calculate_deviation_params(self, skip_embryo=True):
+    def _calculate_deviation_params(self, skip_embryo=True):
         if self._dev_params is not None:
             return self._dev_params
 
-        dcvd = self.__determine_closest_vertice_distance
+        dcvd = self._determine_closest_vertice_distance
         dlen = len(self._data)
-        dmean = np.mean(self._data, axis=0)
+        dmean = np.mean(self._data, axis=1)
         deviation = 0
 
         for node in self._data:
@@ -416,7 +468,7 @@ class IGNG():
             if skip_embryo and nodes[node]['n_type'] == 0:
                 # Skip embryo neurons.
                 continue
-            
+
             mean_k = np.mean(k)
             extra_disp += len(k) * np.sum((mean_k - mean) ** 2)
             intra_disp += np.sum((k - mean_k) ** 2)
@@ -425,7 +477,7 @@ class IGNG():
                 extra_disp * (n - c) /
                 (intra_disp * (c - 1.)))
 
-    def __determine_closest_vertice_distance(self, curnode, skip_embryo=True):
+    def _determine_closest_vertice_distance(self, curnode, skip_embryo=True):
         """Where this curnode is actually the x,y index of the data we want to analyze."""
 
         pos = nx.get_node_attributes(self._graph, 'pos')
@@ -441,24 +493,6 @@ class IGNG():
                 distance = dist
         return distance
 
-    def __determine_2closest_vertices(self, curnode):
-        """Where this curnode is actually the x,y index of the data we want to analyze."""
-
-        pos = nx.get_node_attributes(self._graph, 'pos')
-
-        winner1 = None
-        winner2 = None
-
-        for node, position in pos.items():
-            dist = euclidean(curnode, position)
-            if winner1 is None or dist < winner1[1]:
-                winner1 = [node, dist]
-                continue
-            if winner2 is None or dist < winner2[1]:
-                winner2 = [node, dist]
-
-        return winner1, winner2
-
     def __get_specific_nodes(self, n_type):
         return [n for n, p in nx.get_node_attributes(self._graph, 'n_type').items() if p == n_type]
 
@@ -466,7 +500,7 @@ class IGNG():
         """Main IGNG training subroutine"""
 
         # find nearest unit and second nearest unit
-        winner1, winner2 = self.__determine_2closest_vertices(cur_node)
+        winner1, winner2 = self._determine_2closest_vertices(cur_node)
         graph = self._graph
         nodes = graph.nodes
         d = self._d
@@ -474,7 +508,7 @@ class IGNG():
         # Second list element is a distance.
         if winner1 is None or winner1[1] >= d:
             # 0 - is an embryo type.
-            graph.add_node(self._count, pos=cur_node, error=0, n_type=0, age=0)
+            graph.add_node(self._count, pos=cur_node, n_type=0, age=0)
             winner_node1 = self._count
             self._count += 1
             return
@@ -484,7 +518,7 @@ class IGNG():
         # Second list element is a distance.
         if winner2 is None or winner2[1] >= d:
             # 0 - is an embryo type.
-            graph.add_node(self._count, pos=cur_node, error=0, n_type=0, age=0)
+            graph.add_node(self._count, pos=cur_node, n_type=0, age=0)
             winner_node2 = self._count
             self._count += 1
             graph.add_edge(winner_node1, winner_node2, age=0)
@@ -533,7 +567,7 @@ class IGNG():
             if not graph.neighbors(node):
                 graph.remove_node(node)
 
-    def __save_img(self, fignum, training_step):
+    def _save_img(self, fignum, training_step):
         """."""
 
         if self._surface_graph is not None:
@@ -564,6 +598,264 @@ class IGNG():
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
         #mlab.close(fignum)
+
+
+class GNG(NeuralGas):
+    """Growing Neural Gas multidimensional implementation"""
+
+    def __init__(self, data, surface_graph=None, eps_b=0.2, eps_n=0.006, max_age=5,
+                 lambda_=100, alpha=0.5, d=0.995, max_nodes=1000,
+                 output_images_dir='images'):
+        """."""
+        NeuralGas.__init__(self, data, surface_graph, output_images_dir)
+
+        self._eps_b = eps_b
+        self._eps_n = eps_n
+        self._max_age = max_age
+        self._lambda = lambda_
+        self._alpha = alpha
+        self._d = d
+        self._max_nodes = max_nodes
+        self._fignum = 0
+
+        self.__add_initial_nodes()
+
+    def train(self, max_iterations=10000, save_step=50, stop_on_chi=False):
+        """."""
+
+        fignum = self._fignum
+
+        self._save_img(fignum, 0)
+        graph = self._graph
+        max_nodes = self._max_nodes
+        d = self._d
+        ld = self._lambda
+        alpha = self._alpha
+        g_nodes = graph.nodes
+        update_winner = self.__update_winner
+        data = self._data
+        CHS = self.__calinski_harabaz_score
+        old = 0
+        calin = CHS()
+
+        for i in xrange(1, max_iterations):
+            print("Iterating..{0:d}/{1}".format(i, max_iterations))
+            for x in data:
+                update_winner(x)
+
+                # step 8: if number of input signals generated so far
+                if i % ld == 0 and len(graph) < max_nodes:
+                    # find a node with the largest error
+                    errorvectors = nx.get_node_attributes(graph, 'error')
+                    node_largest_error = max(errorvectors.items(), key=operator.itemgetter(1))[0]
+
+                    # Find a node from neighbor of the node just found, with a largest error.
+                    neighbors = graph.neighbors(node_largest_error)
+                    max_error_neighbor = None
+                    max_error = -1
+                    for n in neighbors:
+                        ce = g_nodes[n]['error']
+                        if ce > max_error:
+                            max_error = ce
+                            max_error_neighbor = n
+
+                    # Decrease error variable of other two nodes by multiplying with alpha.
+                    error_max_node = alpha * errorvectors[node_largest_error]
+                    new_max_error = alpha * graph.nodes[node_largest_error]['error']
+                    graph.nodes[node_largest_error]['error'] = new_max_error
+                    graph.nodes[max_error_neighbor]['error'] = alpha * max_error
+
+                    # Insert a new unit half way between these two.
+                    self._count += 1
+                    new_node = self._count
+                    graph.add_node(new_node,
+                                   pos=self.__get_average_dist(g_nodes[node_largest_error]['pos'], g_nodes[max_error_neighbor]['pos']),
+                                   error=new_max_error)
+
+                    # Insert edges between new node and other two nodes.
+                    graph.add_edge(new_node, max_error_neighbor, age=0)
+                    graph.add_edge(new_node, node_largest_error, age=0)
+
+                    # Remove edge between old nodes.
+                    graph.remove_edge(max_error_neighbor, node_largest_error)
+
+                    if i % save_step == 0:
+                        fignum += 1
+                        self._save_img(fignum, i)
+
+                # step 9: Decrease all error variables.
+                for i in g_nodes:
+                    oe = g_nodes[i]['error']
+                    g_nodes[i]['error'] -= d * oe
+            old = calin
+            calin = CHS()
+
+            # Stop on the enough clusterization quality.
+            if stop_on_chi and old - calin > 0:
+                break
+
+        self._fignum = fignum
+
+    def _train_on_data_item(self, data_item):
+        """IGNG training method"""
+
+        np.append(self._data, data_item)
+
+        self._dev_params = None
+        CHS = self.__calinski_harabaz_score
+        igng = self.__igng
+        data = self._data
+
+        max_iterations = self._max_train_iters
+
+        old = 0
+        calin = CHS()
+        i_count = 0
+
+        # Strictly less.
+        while old - calin < 0:
+            print('Training with new normal node, step {0:d}...'.format(i_count))
+            i_count += 1
+            steps = 0
+
+            if i_count > 100:
+                print('BUG', old, calin)
+                break
+
+            while steps < max_iterations:
+                igng(data_item)
+                steps += 1
+            self._d -= 0.1 * self._d
+            old = calin
+            calin = CHS()
+
+    def _calculate_deviation_params(self, skip_embryo=True):
+        if self._dev_params is not None:
+            return self._dev_params
+
+        dcvd = self._determine_closest_vertice_distance
+        dlen = len(self._data)
+        dmean = np.mean(self._data, axis=1)
+        deviation = 0
+
+        for node in self._data:
+            deviation += dcvd(node)
+        deviation /= dlen
+        deviation = sqrt(deviation)
+        self._dev_params = deviation
+
+        return deviation
+
+    def __add_initial_nodes(self):
+        """Initialize here"""
+
+        node1 = self._data[np.random.randint(0, len(self._data))]
+        node2 = self._data[np.random.randint(0, len(self._data))]
+
+        # make sure you dont select same positions
+        if self.__is_nodes_equal(node1, node2):
+            raise ValueError("Rerun ---------------> similar nodes selected")
+
+        self._count = 0
+        self._graph.add_node(self._count, pos=node1, error=0)
+        self._count += 1
+        self._graph.add_node(self._count, pos=node2, error=0)
+        self._graph.add_edge(self._count - 1, self._count, age=0)
+
+    def __is_nodes_equal(self, n1, n2):
+        return len(set(n1) & set(n2)) == len(n1)
+
+    def __update_winner(self, curnode):
+        """."""
+
+        # find nearest unit and second nearest unit
+        winner1, winner2 = self._determine_2closest_vertices(curnode)
+        winner_node1 = winner1[0]
+        winner_node2 = winner2[0]
+        win_dist_from_node = winner1[1]
+        graph = self._graph
+        g_nodes = graph.nodes
+
+        # Update the winner error.
+        g_nodes[winner_node1]['error'] +=  + win_dist_from_node**2
+
+        # Move the winner node towards current node.
+        g_nodes[winner_node1]['pos'] += self._eps_b * (curnode - g_nodes[winner_node1]['pos'])
+
+        eps_n = self._eps_n
+
+        # Now update all the neighbors distances.
+        for n in nx.all_neighbors(graph, winner_node1):
+            g_nodes[n]['pos'] += eps_n * (curnode - g_nodes[n]['pos'])
+
+        # Update age of the edges, emanating from the winner.
+        for e in graph.edges(winner_node1, data=True):
+            e[2]['age'] += 1
+
+        # Create or zeroe edge between two winner nodes.
+        graph.add_edge(winner_node1, winner_node2, age=0)
+
+        # if there are ages more than maximum allowed age, remove them
+        age_of_edges = nx.get_edge_attributes(graph, 'age')
+        max_age = self._max_age
+        for edge, age in age_of_edges.items():
+            if age >= max_age:
+                graph.remove_edge(edge[0], edge[1])
+
+        # If it causes isolated vertix, remove that vertex as well.
+        for node in g_nodes:
+            if not graph.neighbors(node):
+                graph.remove_node(node)
+
+    def __get_average_dist(self, a, b):
+        """."""
+
+        return (a + b) / 2
+
+    def __calinski_harabaz_score(self):
+        graph = self._graph
+        nodes = graph.nodes
+        extra_disp, intra_disp = 0., 0.
+
+        # CHI = [B / (c - 1)]/[W / (n - c)]
+        # Total numb er of neurons.
+        #ns = nx.get_node_attributes(self._graph, 'n_type')
+        c = len(nodes)
+        # Total number of data.
+        n = len(self._data)
+
+        # Mean of the all data.
+        mean = np.mean(self._data, axis=1)
+
+        pos = nx.get_node_attributes(self._graph, 'pos')
+
+        for node, k in pos.items():
+            mean_k = np.mean(k)
+            extra_disp += len(k) * np.sum((mean_k - mean) ** 2)
+            intra_disp += np.sum((k - mean_k) ** 2)
+
+    def _save_img(self, fignum, training_step):
+        """."""
+
+        if self._surface_graph is not None:
+            text = OrderedDict([
+                ('Image', fignum),
+                ('Training step', training_step),
+                ('Time', '{} s'.format(round(time.time() - self._start_time, 2))),
+                ('Clusters count', self.number_of_clusters()),
+                ('Neurons', len(self._graph)),
+                ('Connections', len(self._graph.edges)),
+                ('Data records', len(self._data))
+            ])
+
+            draw_graph3d(self._surface_graph, fignum)
+
+        graph = self._graph
+
+        if len(graph) > 0:
+            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), text=text)
+
+        mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
 
 
 def sort_nicely(limages):
@@ -597,34 +889,34 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
 
     print('{}\n{}\n{}'.format(frame, 'Detector training...', frame))
     data = read_ids_data(training_set, activity_type='normal')
-    data = preprocessing.normalize(np.array(data, dtype='float64'), axis=0, norm='l2', copy=False)
+    data = preprocessing.normalize(np.array(data, dtype='float64'), axis=1, norm='l1', copy=False)
     G = create_data_graph(data)
 
-    gng = IGNG(data, surface_graph=G, output_images_dir=output_images_dir)
-    gng.train(max_iterations=15, save_step=50)
+    gng = GNG(data, surface_graph=G, output_images_dir=output_images_dir)
+    gng.train(max_iterations=10000, save_step=50)
 
     print('Saving GIF file...')
     convert_images_to_gif(output_images_dir, output_gif)
 
-    print('{}\n{}\n{}'.format(frame, 'Apllying detector to the normal activity using the training set...', frame))
+    print('{}\n{}\n{}'.format(frame, 'Applying detector to the normal activity using the training set...', frame))
     gng.detect_anomalies(data)
 
     for a_type in ['abnormal', 'full']:
-        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the training set...'.format(a_type), frame))
+        print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the training set...'.format(a_type), frame))
         d_data = read_ids_data(training_set, activity_type=a_type)
-        d_data = preprocessing.normalize(np.array(d_data, dtype='float64'), axis=0, norm='l2', copy=False)
+        d_data = preprocessing.normalize(np.array(d_data, dtype='float64'), axis=1, norm='l1', copy=False)
         gng.detect_anomalies(d_data)
 
     dt = OrderedDict([('normal', None), ('abnormal', None), ('full', None)])
 
     for a_type in dt.keys():
-        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set without adaptive learning...'.format(a_type), frame))
+        print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the testing set without adaptive learning...'.format(a_type), frame))
         d = read_ids_data(testing_set, activity_type=a_type)
-        dt[a_type] = d = preprocessing.normalize(np.array(d, dtype='float64'), axis=0, norm='l2', copy=False)
+        dt[a_type] = d = preprocessing.normalize(np.array(d, dtype='float64'), axis=1, norm='l1', copy=False)
         gng.detect_anomalies(d, save_step=1000)
 
     for a_type in ['full']:
-        print('{}\n{}\n{}'.format(frame, 'Apllying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
+        print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
         gng.detect_anomalies(dt[a_type], train=True, save_step=1000)
 
 

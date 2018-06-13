@@ -74,7 +74,7 @@ def shrink_to_3d(data):
 
 
 def draw_dots3d(dots, edges, fignum, clear=True,
-                title = 'Incremental Growing Neural Gas for the network anomalies detection',
+                title='',
                 size=(1024, 768), graph_colormap='viridis',
                 bgcolor=(1, 1, 1),
                 node_color=(0.3, 0.65, 0.3), node_size=0.01,
@@ -599,7 +599,8 @@ class IGNG(NeuralGas):
             #edges = np.array([e for e in graph.edges(nodes) if e[0] in nodes and e[1] in nodes])
             #draw_dots3d(dots, edges, fignum, clear=False, node_color=(1, 0, 0))
 
-            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), text=text)
+            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), title='Incremental Growing Neural Gas for the network anomalies detection',
+                         text=text)
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
         #mlab.close(fignum)
@@ -642,9 +643,17 @@ class GNG(NeuralGas):
         CHS = self.__calinski_harabaz_score
         old = 0
         calin = CHS()
+        start_time = self._start_time = time.time()
 
         for i in xrange(1, max_iterations):
-            print("Iterating..{0:d}/{1}".format(i, max_iterations))
+            tm = time.time() - start_time
+            print('Training time = {} s, Time per record = {} s, Training step = {}/{}, Clusters count = {}, Neurons = {}'.
+                    format(round(tm, 2),
+                           tm * i / len(data),
+                           i, max_iterations,
+                           self.number_of_clusters(),
+                           len(self._graph))
+                    )
             for x in data:
                 update_winner(x)
 
@@ -858,7 +867,9 @@ class GNG(NeuralGas):
         graph = self._graph
 
         if len(graph) > 0:
-            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), text=text)
+            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0),
+                         title='Growing Neural Gas for the network anomalies detection',
+                         text=text)
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
 
@@ -887,10 +898,10 @@ def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', ou
 
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     frame = '-' * 70
-    training_set = 'NSL_KDD/Small Training Set.csv'
-    #training_set = 'NSL_KDD/KDDTest-21.txt'
-    testing_set = 'NSL_KDD/KDDTest-21.txt'
-    #testing_set = 'NSL_KDD/KDDTrain+.txt'
+    #training_set = 'NSL_KDD/Small Training Set.csv'
+    training_set = 'NSL_KDD/KDDTest-21.txt'
+    #testing_set = 'NSL_KDD/KDDTest-21.txt'
+    testing_set = 'NSL_KDD/KDDTrain+.txt'
 
     print('{}\n{}\n{}'.format(frame, 'Detector training...', frame))
     data = read_ids_data(training_set, activity_type='normal')
@@ -920,9 +931,9 @@ def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', ou
         dt[a_type] = d = preprocessing.normalize(np.array(d, dtype='float64'), axis=1, norm='l1', copy=False)
         gng.detect_anomalies(d, save_step=1000)
 
-    for a_type in ['full']:
-        print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
-        gng.detect_anomalies(dt[a_type], train=True, save_step=1000)
+    #for a_type in ['full']:
+    #    print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
+    #    gng.detect_anomalies(dt[a_type], train=True, save_step=1000)
 
 
 def main():
@@ -931,9 +942,12 @@ def main():
     start_time = time.time()
 
     mlab.options.offscreen = True
-    #test_detector(use_hosts_data=False, max_iters=10000, alg=GNG, output_gif='gng_wohosts.gif')
+    test_detector(use_hosts_data=False, max_iters=10000, alg=GNG, output_gif='gng_wohosts.gif')
+    print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
+    print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=True, max_iters=10000, alg=GNG, output_gif='gng_whosts.gif')
+    print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=True, max_iters=100, alg=IGNG, output_gif='igng_whosts.gif')
     print('Full working time = {}'.format(round(time.time() - start_time, 2)))
 

@@ -327,7 +327,7 @@ class NeuralGas():
 class IGNG(NeuralGas):
     """Incremental Growing Neural Gas multidimensional implementation"""
 
-    def __init__(self, data, surface_graph=None, eps_b=0.01, eps_n=0.002, max_age=10,
+    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=10,
                  a_mature=1, output_images_dir='images'):
         """."""
 
@@ -603,8 +603,8 @@ class IGNG(NeuralGas):
 class GNG(NeuralGas):
     """Growing Neural Gas multidimensional implementation"""
 
-    def __init__(self, data, surface_graph=None, eps_b=0.2, eps_n=0.006, max_age=5,
-                 lambda_=100, alpha=0.5, d=0.995, max_nodes=1000,
+    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=15,
+                 lambda_=100, alpha=0.5, d=0.005, max_nodes=1000,
                  output_images_dir='images'):
         """."""
         NeuralGas.__init__(self, data, surface_graph, output_images_dir)
@@ -893,7 +893,7 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
     G = create_data_graph(data)
 
     gng = GNG(data, surface_graph=G, output_images_dir=output_images_dir)
-    gng.train(max_iterations=10000, save_step=50)
+    gng.train(max_iterations=3000, save_step=50)
 
     print('Saving GIF file...')
     convert_images_to_gif(output_images_dir, output_gif)

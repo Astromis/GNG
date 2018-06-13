@@ -425,7 +425,7 @@ class IGNG(NeuralGas):
         self._dev_params = None
 
         # while steps < self._max_train_iters:
-        while steps < 10:
+        while steps < 5:
             igng(data_item)
             steps += 1
 
@@ -915,7 +915,7 @@ def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', ou
 
     for a_type in ['abnormal', 'full']:
         print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the training set...'.format(a_type), frame))
-        d_data = read_ids_data(training_set, activity_type=a_type)
+        d_data = read_ids_data(training_set, activity_type=a_type, with_host=use_hosts_data)
         d_data = preprocessing.normalize(np.array(d_data, dtype='float64'), axis=1, norm='l1', copy=False)
         gng.detect_anomalies(d_data)
 
@@ -923,7 +923,7 @@ def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', ou
 
     for a_type in dt.keys():
         print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the testing set without adaptive learning...'.format(a_type), frame))
-        d = read_ids_data(testing_set, activity_type=a_type)
+        d = read_ids_data(testing_set, activity_type=a_type, with_host=use_hosts_data)
         dt[a_type] = d = preprocessing.normalize(np.array(d, dtype='float64'), axis=1, norm='l1', copy=False)
         gng.detect_anomalies(d, save_step=1000, train=False)
 
@@ -940,9 +940,9 @@ def main():
     mlab.options.offscreen = True
     test_detector(use_hosts_data=False, max_iters=10000, alg=GNG, output_gif='gng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
-    test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
-    print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=True, max_iters=10000, alg=GNG, output_gif='gng_whosts.gif')
+    print('Working time = {}'.format(round(time.time() - start_time, 2)))
+    test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=True, max_iters=100, alg=IGNG, output_gif='igng_whosts.gif')
     print('Full working time = {}'.format(round(time.time() - start_time, 2)))

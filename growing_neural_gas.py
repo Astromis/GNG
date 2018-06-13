@@ -276,8 +276,10 @@ class NeuralGas():
         return anomalies_counter > 0
 
     def test_node(self, node, train=False):
-        dist = abs(self._determine_closest_vertice_distance(node))
-        dist_sub_dev = dist - self._calculate_deviation_params()
+        n, dist = self._determine_closest_vertice(node)
+        dev = self._calculate_deviation_params()
+        dev = dev[frozenset(nx.node_connected_component(self._graph, n))]
+        dist_sub_dev = dist - dev
         if dist_sub_dev > 0:
             return dist_sub_dev
 
@@ -299,13 +301,16 @@ class NeuralGas():
         """."""
         raise NotImplementedError()
 
-    def _determine_closest_vertice_distance(self, curnode):
+    def _determine_closest_vertice(self, curnode):
         """."""
 
         pos = nx.get_node_attributes(self._graph, 'pos')
-        distances = np.linalg.norm(pos.values() - curnode, ord=2, axis=1)
+        kv = zip(*pos.items())
+        distances = np.linalg.norm(kv[1] - curnode, ord=2, axis=1)
+
         i0 = np.argsort(distances)[0]
-        return distances[0]
+
+        return kv[0][i0], distances[i0]
 
     def _determine_2closest_vertices(self, curnode):
         """Where this curnode is actually the x,y index of the data we want to analyze."""
@@ -439,7 +444,7 @@ class IGNG(NeuralGas):
         if self._dev_params is not None:
             return self._dev_params
 
-        dcvd = self._determine_closest_vertice_distance
+        dcvd = self._determine_closest_vertice
         dlen = len(self._data)
         dmean = np.mean(self._data, axis=1)
         deviation = 0
@@ -482,7 +487,7 @@ class IGNG(NeuralGas):
                 extra_disp * (n - c) /
                 (intra_disp * (c - 1.)))
 
-    def _determine_closest_vertice_distance(self, curnode, skip_embryo=True):
+    def _determine_closest_vertice(self, curnode, skip_embryo=True):
         """Where this curnode is actually the x,y index of the data we want to analyze."""
 
         pos = nx.get_node_attributes(self._graph, 'pos')
@@ -575,6 +580,8 @@ class IGNG(NeuralGas):
     def _save_img(self, fignum, training_step):
         """."""
 
+        title='Incremental Growing Neural Gas for the network anomalies detection'
+
         if self._surface_graph is not None:
             text = OrderedDict([
                 ('Image', fignum),
@@ -588,7 +595,7 @@ class IGNG(NeuralGas):
                 ('Data records', len(self._data))
             ])
 
-            draw_graph3d(self._surface_graph, fignum)
+            draw_graph3d(self._surface_graph, fignum, title=title)
 
         graph = self._graph
 
@@ -599,7 +606,7 @@ class IGNG(NeuralGas):
             #edges = np.array([e for e in graph.edges(nodes) if e[0] in nodes and e[1] in nodes])
             #draw_dots3d(dots, edges, fignum, clear=False, node_color=(1, 0, 0))
 
-            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), title='Incremental Growing Neural Gas for the network anomalies detection',
+            draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0), title=title,
                          text=text)
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
@@ -743,22 +750,27 @@ class GNG(NeuralGas):
             old = calin
             calin = CHS()
 
-    def _calculate_deviation_params(self, skip_embryo=True):
+    def _calculate_deviation_params(self):
         if self._dev_params is not None:
             return self._dev_params
 
-        dcvd = self._determine_closest_vertice_distance
+        clusters = {}
+        dcvd = self._determine_closest_vertice
         dlen = len(self._data)
-        dmean = np.mean(self._data, axis=1)
-        deviation = 0
+        #dmean = np.mean(self._data, axis=1)
+        #deviation = 0
 
         for node in self._data:
-            deviation += dcvd(node)
-        deviation /= dlen
-        deviation = sqrt(deviation)
-        self._dev_params = deviation
+            n = dcvd(node)
+            cluster = clusters.setdefault(frozenset(nx.node_connected_component(self._graph, n[0])), [0, 0])
+            cluster[0] += n[1]
+            cluster[1] += 1
 
-        return deviation
+        clusters = {k: sqrt(v[0]/v[1]) for k, v in clusters.items()}
+
+        self._dev_params = clusters
+
+        return clusters
 
     def __add_initial_nodes(self):
         """Initialize here"""
@@ -851,6 +863,8 @@ class GNG(NeuralGas):
     def _save_img(self, fignum, training_step):
         """."""
 
+        title = 'Growing Neural Gas for the network anomalies detection'
+
         if self._surface_graph is not None:
             text = OrderedDict([
                 ('Image', fignum),
@@ -862,13 +876,13 @@ class GNG(NeuralGas):
                 ('Data records', len(self._data))
             ])
 
-            draw_graph3d(self._surface_graph, fignum)
+            draw_graph3d(self._surface_graph, fignum, title=title)
 
         graph = self._graph
 
         if len(graph) > 0:
             draw_graph3d(graph, fignum, clear=False, node_color=(1, 0, 0),
-                         title='Growing Neural Gas for the network anomalies detection',
+                         title=title,
                          text=text)
 
         mlab.savefig("{0}/{1}.png".format(self._output_images_dir, str(fignum)))
@@ -944,7 +958,7 @@ def main():
     mlab.options.offscreen = True
     test_detector(use_hosts_data=False, max_iters=5000, alg=GNG, output_gif='gng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
-    test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
+    test_detector(use_hosts_data=False, max_iters=10, alg=IGNG, output_gif='igng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=True, max_iters=5000, alg=GNG, output_gif='gng_whosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))

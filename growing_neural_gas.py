@@ -311,6 +311,11 @@ class NeuralGas():
         """Where this curnode is actually the x,y index of the data we want to analyze."""
 
         pos = nx.get_node_attributes(self._graph, 'pos')
+        l_pos = len(pos)
+        if l_pos == 0:
+            return None, None
+        elif l_pos == 1:
+            return pos[0], None
 
         kv = zip(*pos.items())
         # Calculate Euclidean distance (2-norm of difference vectors) and get first two indexes of the sorted array.
@@ -877,7 +882,7 @@ def convert_images_to_gif(output_images_dir, output_gif):
     imageio.mimsave(output_gif, images)
 
 
-def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'output.gif'):
+def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', output_gif='output.gif'):
     """Detector quality testing routine"""
 
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
@@ -892,8 +897,8 @@ def test_detector(use_hosts_data, output_images_dir='images', output_gif = 'outp
     data = preprocessing.normalize(np.array(data, dtype='float64'), axis=1, norm='l1', copy=False)
     G = create_data_graph(data)
 
-    gng = GNG(data, surface_graph=G, output_images_dir=output_images_dir)
-    gng.train(max_iterations=3000, save_step=50)
+    gng = alg(data, surface_graph=G, output_images_dir=output_images_dir)
+    gng.train(max_iterations=max_iters, save_step=50)
 
     print('Saving GIF file...')
     convert_images_to_gif(output_images_dir, output_gif)
@@ -926,7 +931,10 @@ def main():
     start_time = time.time()
 
     mlab.options.offscreen = True
-    test_detector(False)
+    #test_detector(use_hosts_data=False, max_iters=10000, alg=GNG, output_gif='gng_wohosts.gif')
+    test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
+    test_detector(use_hosts_data=True, max_iters=10000, alg=GNG, output_gif='gng_whosts.gif')
+    test_detector(use_hosts_data=True, max_iters=100, alg=IGNG, output_gif='igng_whosts.gif')
     print('Full working time = {}'.format(round(time.time() - start_time, 2)))
 
     return 0

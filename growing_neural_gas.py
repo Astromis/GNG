@@ -416,7 +416,7 @@ class IGNG(NeuralGas):
             self._d -= 0.1 * self._d
             old = calin
             calin = CHS()
-        print('Training complete, clusters count = {}'.format(self.number_of_clusters()))
+        print('Training complete, clusters count = {}, training time = '.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
         self._fignum = fignum
 
     def _train_on_data_item(self, data_item):
@@ -681,6 +681,7 @@ class GNG(NeuralGas):
             # Stop on the enough clusterization quality.
             if stop_on_chi and old - calin > 0:
                 break
+        print('Training complete, clusters count = {}, training time = '.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
 
     def __train_step(self, i, alpha, ld, d, max_nodes, save_img, save_step, graph, update_winner):
         g_nodes = graph.nodes
@@ -734,6 +735,8 @@ class GNG(NeuralGas):
     def _train_on_data_item(self, data_item):
         """IGNG training method"""
 
+        self._dev_params = None
+
         np.append(self._data, data_item)
 
         graph = self._graph
@@ -744,7 +747,6 @@ class GNG(NeuralGas):
         update_winner = self.__update_winner
         data = self._data
         train_step = self.__train_step
-        self._dev_params = None
 
         for i in xrange(1, 5):
             update_winner(data_item)
@@ -938,9 +940,9 @@ def main():
     start_time = time.time()
 
     mlab.options.offscreen = True
-    test_detector(use_hosts_data=False, max_iters=10000, alg=GNG, output_gif='gng_wohosts.gif')
+    test_detector(use_hosts_data=False, max_iters=15000, alg=GNG, output_gif='gng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
-    test_detector(use_hosts_data=True, max_iters=10000, alg=GNG, output_gif='gng_whosts.gif')
+    test_detector(use_hosts_data=True, max_iters=15000, alg=GNG, output_gif='gng_whosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))

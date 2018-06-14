@@ -745,10 +745,9 @@ class GNG(NeuralGas):
         data = self._data
         train_step = self.__train_step
 
-        for i in xrange(1, 5):
-            update_winner(data_item)
-            train_step(i, alpha, ld, d, max_nodes, False, -1, graph, update_winner)
-
+        #for i in xrange(1, 5):
+        update_winner(data_item)
+        train_step(0, alpha, ld, d, max_nodes, False, -1, graph, update_winner)
 
     def _calculate_deviation_params(self):
         return super(GNG, self)._calculate_deviation_params()
@@ -893,10 +892,10 @@ def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', ou
 
     #data = read_ids_data('NSL_KDD/20 Percent Training Set.csv')
     frame = '-' * 70
-    #training_set = 'NSL_KDD/Small Training Set.csv'
-    training_set = 'NSL_KDD/KDDTest-21.txt'
-    #testing_set = 'NSL_KDD/KDDTest-21.txt'
-    testing_set = 'NSL_KDD/KDDTrain+.txt'
+    training_set = 'NSL_KDD/Small Training Set.csv'
+    #training_set = 'NSL_KDD/KDDTest-21.txt'
+    testing_set = 'NSL_KDD/KDDTest-21.txt'
+    #testing_set = 'NSL_KDD/KDDTrain+.txt'
 
     print('{}\n{}\n{}'.format(frame, '{} detector training...'.format(alg.__name__), frame))
     data = read_ids_data(training_set, activity_type='normal', with_host=use_hosts_data)
@@ -937,9 +936,9 @@ def main():
     start_time = time.time()
 
     mlab.options.offscreen = True
-    test_detector(use_hosts_data=False, max_iters=15000, alg=GNG, output_gif='gng_wohosts.gif')
+    test_detector(use_hosts_data=False, max_iters=7000, alg=GNG, output_gif='gng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
-    test_detector(use_hosts_data=True, max_iters=15000, alg=GNG, output_gif='gng_whosts.gif')
+    test_detector(use_hosts_data=True, max_iters=7000, alg=GNG, output_gif='gng_whosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))

@@ -278,12 +278,13 @@ class NeuralGas():
     def test_node(self, node, train=False):
         n, dist = self._determine_closest_vertice(node)
         dev = self._calculate_deviation_params()
-        dev = dev[frozenset(nx.node_connected_component(self._graph, n))]
+        dev = dev.get(frozenset(nx.node_connected_component(self._graph, n)), dist + 1)
         dist_sub_dev = dist - dev
         if dist_sub_dev > 0:
             return dist_sub_dev
 
         if train:
+            self._dev_params = None
             self._train_on_data_item(node)
 
         return 0
@@ -416,13 +417,12 @@ class IGNG(NeuralGas):
             self._d -= 0.1 * self._d
             old = calin
             calin = CHS()
-        print('Training complete, clusters count = {}, training time = '.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
+        print('Training complete, clusters count = {}, training time = {} s'.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
         self._fignum = fignum
 
     def _train_on_data_item(self, data_item):
         steps = 0
         igng = self.__igng
-        self._dev_params = None
 
         # while steps < self._max_train_iters:
         while steps < 5:
@@ -681,7 +681,7 @@ class GNG(NeuralGas):
             # Stop on the enough clusterization quality.
             if stop_on_chi and old - calin > 0:
                 break
-        print('Training complete, clusters count = {}, training time = '.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
+        print('Training complete, clusters count = {}, training time = {} s'.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
 
     def __train_step(self, i, alpha, ld, d, max_nodes, save_img, save_step, graph, update_winner):
         g_nodes = graph.nodes
@@ -704,8 +704,7 @@ class GNG(NeuralGas):
                     max_error_neighbor = n
 
             # Decrease error variable of other two nodes by multiplying with alpha.
-            error_max_node = alpha * errorvectors[node_largest_error]
-            new_max_error = alpha * graph.nodes[node_largest_error]['error']
+            new_max_error = alpha * errorvectors[node_largest_error]
             graph.nodes[node_largest_error]['error'] = new_max_error
             graph.nodes[max_error_neighbor]['error'] = alpha * max_error
 
@@ -734,8 +733,6 @@ class GNG(NeuralGas):
 
     def _train_on_data_item(self, data_item):
         """IGNG training method"""
-
-        self._dev_params = None
 
         np.append(self._data, data_item)
 

@@ -403,7 +403,7 @@ class IGNG(NeuralGas):
                         tm = time.time() - start_time
                         print('Training time = {} s, Time per record = {} s, Training step = {}, Clusters count = {}, Neurons = {}, CHI = {}'.
                               format(round(tm, 2),
-                                     tm * i_count * steps / (i if i else len(data)),
+                                     tm / (i if i and i_count == 0 else len(data)),
                                      i_count,
                                      self.number_of_clusters(),
                                      len(self._graph),
@@ -664,7 +664,7 @@ class GNG(NeuralGas):
             tm = time.time() - start_time
             print('Training time = {} s, Time per record = {} s, Training step = {}/{}, Clusters count = {}, Neurons = {}'.
                     format(round(tm, 2),
-                           tm * i / len(data),
+                           tm / len(data),
                            i, max_iterations,
                            self.number_of_clusters(),
                            len(self._graph))

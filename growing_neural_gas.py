@@ -694,7 +694,7 @@ class GNG(NeuralGas):
 
             # Find a node from neighbor of the node just found, with a largest error.
             neighbors = graph.neighbors(node_largest_error)
-            max_error_neighbor = None
+            max_error_neighbor = 0
             max_error = -1
 
             for n in neighbors:
@@ -925,9 +925,9 @@ def test_detector(use_hosts_data, max_iters, alg, output_images_dir='images', ou
         dt[a_type] = d = preprocessing.normalize(np.array(d, dtype='float64'), axis=1, norm='l1', copy=False)
         gng.detect_anomalies(d, save_step=1000, train=False)
 
-    for a_type in ['full']:
-        print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
-        gng.detect_anomalies(dt[a_type], train=True, save_step=1000)
+    #for a_type in ['full']:
+    #    print('{}\n{}\n{}'.format(frame, 'Applying detector to the {} activity using the testing set with adaptive learning...'.format(a_type), frame))
+    #    gng.detect_anomalies(dt[a_type], train=True, save_step=1000)
 
 
 def main():

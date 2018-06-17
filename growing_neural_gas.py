@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from abc import ABCMeta, abstractmethod
+from copy import copy
 from math import sqrt
 from mayavi import mlab
 import operator
@@ -356,7 +357,7 @@ class NeuralGas():
 class IGNG(NeuralGas):
     """Incremental Growing Neural Gas multidimensional implementation"""
 
-    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0005, max_age=10,
+    def __init__(self, data, surface_graph=None, eps_b=0.05, eps_n=0.0006, max_age=7,
                  a_mature=1, output_images_dir='images'):
         """."""
 
@@ -527,7 +528,7 @@ class IGNG(NeuralGas):
         # Second list element is a distance.
         if winner1 is None or winner1[1] >= d:
             # 0 - is an embryo type.
-            graph.add_node(self._count, pos=cur_node, n_type=0, age=0)
+            graph.add_node(self._count, pos=copy(cur_node), n_type=0, age=0)
             winner_node1 = self._count
             self._count += 1
             return
@@ -537,7 +538,7 @@ class IGNG(NeuralGas):
         # Second list element is a distance.
         if winner2 is None or winner2[1] >= d:
             # 0 - is an embryo type.
-            graph.add_node(self._count, pos=cur_node, n_type=0, age=0)
+            graph.add_node(self._count, pos=copy(cur_node), n_type=0, age=0)
             winner_node2 = self._count
             self._count += 1
             graph.add_edge(winner_node1, winner_node2, age=0)
@@ -940,9 +941,9 @@ def main():
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
     test_detector(use_hosts_data=True, max_iters=7000, alg=GNG, output_gif='gng_whosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
-    test_detector(use_hosts_data=False, max_iters=100, alg=IGNG, output_gif='igng_wohosts.gif')
+    test_detector(use_hosts_data=False, max_iters=10, alg=IGNG, output_gif='igng_wohosts.gif')
     print('Working time = {}'.format(round(time.time() - start_time, 2)))
-    test_detector(use_hosts_data=True, max_iters=100, alg=IGNG, output_gif='igng_whosts.gif')
+    test_detector(use_hosts_data=True, max_iters=10, alg=IGNG, output_gif='igng_whosts.gif')
     print('Full working time = {}'.format(round(time.time() - start_time, 2)))
 
     return 0

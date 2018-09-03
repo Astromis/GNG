@@ -2,6 +2,7 @@ GNG
 ===
 
 Application of growing neural gas algorithm for the network anomalies detection.
+Code is described in [this article](https://habr.com/post/358200/).
 
 Usage:
 ---

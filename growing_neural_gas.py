@@ -503,7 +503,7 @@ class IGNG(NeuralGas):
         pos = nx.get_node_attributes(self._graph, 'pos')
         nodes = self._graph.nodes
 
-        distance = sys.maxint
+        distance = sys.maxsize
         for node, position in pos.items():
             if skip_embryo and nodes[node]['n_type'] == 0:
                 # Skip embryo neurons.

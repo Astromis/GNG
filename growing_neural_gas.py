@@ -217,7 +217,7 @@ def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field 
     return result
 
 
-class NeuralGas():
+class NeuralGas:
     __metaclass__ = ABCMeta
 
     def __init__(self, data, surface_graph=None, output_images_dir='images'):
@@ -233,7 +233,7 @@ class NeuralGas():
         if os.path.isdir(output_images_dir):
             shutil.rmtree('{}'.format(output_images_dir))
 
-        print("Ouput images will be saved in: {0}".format(output_images_dir))
+        print("Output images will be saved in: {0}".format(output_images_dir))
         os.makedirs(output_images_dir)
 
         self._start_time = time.time()
@@ -271,7 +271,8 @@ class NeuralGas():
         tm = time.time() - start_time
 
         print('{} [abnormal records = {}, normal records = {}, detection time = {} s, time per record = {} s]'.
-              format('Anomalies were detected (count = {})'.format(anomalies_counter) if anomalies_counter else 'Anomalies weren\'t detected',
+              format('Anomalies were detected (count = {})'.format(anomalies_counter)
+                     if anomalies_counter else 'Anomalies weren\'t detected',
                      anomaly_records_counter, normal_records_counter, round(tm, 2), tm / len(data)))
 
         return anomalies_counter > 0
@@ -299,7 +300,7 @@ class NeuralGas():
         """."""
         raise NotImplementedError()
 
-    def _calculate_deviation_params(self, distance_function_params={}):
+    def _calculate_deviation_params(self, distance_function_params=None):
         if self._dev_params is not None:
             return self._dev_params
 
@@ -310,7 +311,7 @@ class NeuralGas():
         #deviation = 0
 
         for node in self._data:
-            n = dcvd(node, **distance_function_params)
+            n = dcvd(node) #, **distance_function_params)
             cluster = clusters.setdefault(frozenset(nx.node_connected_component(self._graph, n[0])), [0, 0])
             cluster[0] += n[1]
             cluster[1] += 1
@@ -325,7 +326,7 @@ class NeuralGas():
         """."""
 
         pos = nx.get_node_attributes(self._graph, 'pos')
-        kv = zip(*pos.items())
+        kv = list(zip(*pos.items()))
         distances = np.linalg.norm(kv[1] - curnode, ord=2, axis=1)
 
         i0 = np.argsort(distances)[0]
@@ -713,7 +714,8 @@ class GNG(NeuralGas):
             self._count += 1
             new_node = self._count
             graph.add_node(new_node,
-                        pos=self.__get_average_dist(g_nodes[node_largest_error]['pos'], g_nodes[max_error_neighbor]['pos']),
+                        pos=self.__class__.__get_average_dist(g_nodes[node_largest_error]['pos'],
+                                                              g_nodes[max_error_neighbor]['pos']),
                         error=new_max_error)
 
             # Insert edges between new node and other two nodes.
@@ -760,7 +762,7 @@ class GNG(NeuralGas):
         node2 = self._data[np.random.randint(0, len(self._data))]
 
         # make sure you dont select same positions
-        if self.__is_nodes_equal(node1, node2):
+        if self.__class__.__is_nodes_equal(node1, node2):
             raise ValueError("Rerun ---------------> similar nodes selected")
 
         self._count = 0
@@ -769,7 +771,8 @@ class GNG(NeuralGas):
         self._graph.add_node(self._count, pos=node2, error=0)
         self._graph.add_edge(self._count - 1, self._count, age=0)
 
-    def __is_nodes_equal(self, n1, n2):
+    @staticmethod
+    def __is_nodes_equal(n1, n2):
         return len(set(n1) & set(n2)) == len(n1)
 
     def __update_winner(self, curnode):
@@ -814,7 +817,8 @@ class GNG(NeuralGas):
             if not graph.neighbors(node):
                 graph.remove_node(node)
 
-    def __get_average_dist(self, a, b):
+    @staticmethod
+    def __get_average_dist(a, b):
         """."""
 
         return (a + b) / 2

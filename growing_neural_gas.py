@@ -3,7 +3,6 @@
 
 from abc import ABCMeta, abstractmethod
 from copy import copy
-from math import sqrt
 from mayavi import mlab
 import operator
 import imageio
@@ -18,7 +17,6 @@ import os
 import shutil
 import sys
 import glob
-from past.builtins import xrange
 from future.utils import iteritems
 import time
 
@@ -31,17 +29,17 @@ def sh(s):
 
 
 def create_data_graph(dots):
-    """Create the graph and returns the networkx version of it 'G'."""
+    """Create the graph and returns the networkx version of it 'g'."""
 
     count = 0
 
-    G = nx.Graph()
+    g = nx.Graph()
 
     for i in dots:
-        G.add_node(count, pos=(i))
+        g.add_node(count, pos=i)
         count += 1
 
-    return G
+    return g
 
 
 def get_ra(ra=0, ra_step=0.3):
@@ -170,7 +168,8 @@ def generate_host_activity(is_normal):
 
 
 def read_ids_data(data_file, activity_type='normal', labels_file='NSL_KDD/Field Names.csv', with_host=False):
-    selected_parameters = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent', 'serror_rate',
+    selected_parameters = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land',
+                           'wrong_fragment', 'urgent', 'serror_rate',
                            'diff_srv_rate', 'srv_diff_host_rate', 'dst_host_srv_count', 'count']
 
     # "Label" - "converter function" dictionary.
@@ -242,8 +241,13 @@ class NeuralGas:
     def train(self, max_iterations=100, save_step=0):
         raise NotImplementedError()
 
+    @property
     def number_of_clusters(self):
         return nx.number_connected_components(self._graph)
+
+    @property
+    def clusters(self):
+        return nx.connected_components(self._graph)
 
     def detect_anomalies(self, data, threshold=5, train=False, save_step=100):
         anomalies_counter, anomaly_records_counter, normal_records_counter = 0, 0, 0
@@ -316,7 +320,7 @@ class NeuralGas:
             cluster[0] += n[1]
             cluster[1] += 1
 
-        clusters = {k: sqrt(v[0]/v[1]) for k, v in clusters.items()}
+        clusters = {k: np.sqrt(v[0]/v[1]) for k, v in clusters.items()}
 
         self._dev_params = clusters
 
@@ -404,13 +408,11 @@ class IGNG(NeuralGas):
                     igng(x)
                     if i % save_step == 0:
                         tm = time.time() - start_time
-                        print('Training time = {} s, Time per record = {} s, Training step = {}, Clusters count = {}, Neurons = {}, CHI = {}'.
-                              format(round(tm, 2),
-                                     tm / (i if i and i_count == 0 else len(data)),
-                                     i_count,
-                                     self.number_of_clusters(),
-                                     len(self._graph),
-                                     old - calin)
+                        print(f'Training time = {round(tm, 2)} s, ' +
+                              f'Time per record = {tm / (i if i and i_count == 0 else len(data))} s ' +
+                              f'Training step = {i_count} / {max_iterations}, ' +
+                              f'Clusters count = {self.number_of_clusters}, ' +
+                              f'Neurons = {len(self._graph)}, CHI = {old - calin}'
                               )
                         self._save_img(fignum, i_count)
                         fignum += 1
@@ -419,7 +421,7 @@ class IGNG(NeuralGas):
             self._d -= 0.1 * self._d
             old = calin
             calin = CHS()
-        print('Training complete, clusters count = {}, training time = {} s'.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
+        print('Training complete, clusters count = {}, training time = {} s'.format(self.number_of_clusters, round(time.time() - start_time, 2)))
         self._fignum = fignum
 
     def _train_on_data_item(self, data_item):
@@ -598,7 +600,7 @@ class IGNG(NeuralGas):
                 ('Image', fignum),
                 ('Training step', training_step),
                 ('Time', '{} s'.format(round(time.time() - self._start_time, 2))),
-                ('Clusters count', self.number_of_clusters()),
+                ('Clusters count', self.number_of_clusters),
                 ('Neurons', len(self._graph)),
                 ('    Mature', len(self.__get_specific_nodes(1))),
                 ('    Embryo', len(self.__get_specific_nodes(0))),
@@ -662,16 +664,13 @@ class GNG(NeuralGas):
         start_time = self._start_time = time.time()
         train_step = self.__train_step
 
-        for i in xrange(1, max_iterations):
+        for i in range(1, max_iterations):
             tm = time.time() - start_time
-            print('Training time = {} s, Time per record = {} s, Training step = {}/{}, Clusters count = {}, Neurons = {}'.
-                    format(round(tm, 2),
-                           tm / len(data),
-                           i, max_iterations,
-                           self.number_of_clusters(),
-                           len(self._graph))
-                    )
-
+            print(f'Training time = {round(tm, 2)} s, ' +
+                  f'Time per record = {tm / len(data)} s ' +
+                  f'Training step = {i} / {max_iterations}, Clusters count = {self.number_of_clusters}, ' +
+                  f'Neurons = {len(self._graph)}'
+                  )
             for x in data:
                 update_winner(x)
 
@@ -683,7 +682,8 @@ class GNG(NeuralGas):
             # Stop on the enough clusterization quality.
             if stop_on_chi and old - calin > 0:
                 break
-        print('Training complete, clusters count = {}, training time = {} s'.format(self.number_of_clusters(), round(time.time() - start_time, 2)))
+        print(f'Training complete, clusters count = {self.number_of_clusters}, ' +
+              f'training time = {round(time.time() - start_time, 2)} s')
 
     def __train_step(self, i, alpha, ld, d, max_nodes, save_img, save_step, graph, update_winner):
         g_nodes = graph.nodes
@@ -761,7 +761,7 @@ class GNG(NeuralGas):
         node1 = self._data[np.random.randint(0, len(self._data))]
         node2 = self._data[np.random.randint(0, len(self._data))]
 
-        # make sure you dont select same positions
+        # make sure you don't select same positions
         if self.__class__.__is_nodes_equal(node1, node2):
             raise ValueError("Rerun ---------------> similar nodes selected")
 
@@ -855,7 +855,7 @@ class GNG(NeuralGas):
                 ('Image', fignum),
                 ('Training step', training_step),
                 ('Time', '{} s'.format(round(time.time() - self._start_time, 2))),
-                ('Clusters count', self.number_of_clusters()),
+                ('Clusters count', self.number_of_clusters),
                 ('Neurons', len(self._graph)),
                 ('Connections', len(self._graph.edges)),
                 ('Data records', len(self._data))

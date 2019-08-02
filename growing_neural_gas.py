@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 from abc import ABCMeta, abstractmethod
@@ -342,7 +342,7 @@ class NeuralGas():
         elif l_pos == 1:
             return pos[0], None
 
-        kv = zip(*pos.items())
+        kv = list(zip(*pos.items()))
         # Calculate Euclidean distance (2-norm of difference vectors) and get first two indexes of the sorted array.
         # Or a Euclidean-closest nodes index.
         distances = np.linalg.norm(kv[1] - curnode, ord=2, axis=1)
